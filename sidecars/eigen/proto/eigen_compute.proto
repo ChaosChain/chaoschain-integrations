@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package eigen.compute.v1;
+
+option go_package = "github.com/chaoschain/chaoschain-integrations/sidecars/eigen/pkg/compute";
+
+// Eigen Compute Service
+service EigenCompute {
+  // Submit compute job
+  rpc SubmitJob(SubmitJobRequest) returns (SubmitJobResponse);
+  
+  // Get job status
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  
+  // Get job result
+  rpc GetResult(GetResultRequest) returns (GetResultResponse);
+  
+  // Cancel job
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+  
+  // Health check
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+message SubmitJobRequest {
+  string task = 1;
+  string model = 2;
+  string prompt = 3;
+  map<string, string> inputs = 4;
+  string verification = 5;
+  string image_digest = 6;
+  map<string, string> config = 7;
+}
+
+message SubmitJobResponse {
+  string job_id = 1;
+  string status = 2;
+  int64 created_at = 3;
+}
+
+message GetStatusRequest {
+  string job_id = 1;
+}
+
+message GetStatusResponse {
+  string job_id = 1;
+  string status = 2;
+  int32 progress = 3;
+  string error = 4;
+  int64 updated_at = 5;
+}
+
+message GetResultRequest {
+  string job_id = 1;
+}
+
+message GetResultResponse {
+  string job_id = 1;
+  string status = 2;
+  string output = 3;  // JSON-encoded output
+  TEEAttestation attestation = 4;
+  ComputeMetadata metadata = 5;
+  int64 completed_at = 6;
+}
+
+message CancelJobRequest {
+  string job_id = 1;
+}
+
+message CancelJobResponse {
+  string job_id = 1;
+  bool cancelled = 2;
+  string message = 3;
+}
+
+message TEEAttestation {
+  string quote = 1;
+  string report = 2;
+  map<string, string> evidence = 3;
+}
+
+message ComputeMetadata {
+  string docker_digest = 1;
+  string enclave_pubkey = 2;
+  string execution_hash = 3;
+  string signed_result = 4;
+  string verification_method = 5;
+  map<string, string> extra = 6;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  string version = 2;
+}
+

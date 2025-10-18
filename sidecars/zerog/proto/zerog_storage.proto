@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package zerog.storage.v1;
+
+option go_package = "github.com/chaoschain/chaoschain-integrations/sidecars/zerog/pkg/storage";
+
+// ZeroG Storage Service
+service ZeroGStorage {
+  // Store content and get proof
+  rpc Put(PutRequest) returns (PutResponse);
+  
+  // Retrieve content
+  rpc Get(GetRequest) returns (GetResponse);
+  
+  // Check if content exists
+  rpc Exists(ExistsRequest) returns (ExistsResponse);
+  
+  // Get storage proof without fetching content
+  rpc GetProof(GetProofRequest) returns (GetProofResponse);
+  
+  // Health check
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+message PutRequest {
+  bytes content = 1;
+  map<string, string> metadata = 2;
+  bool compression = 3;
+}
+
+message PutResponse {
+  string file_id = 1;
+  string root_hash = 2;
+  MerkleProof merkle_proof = 3;
+  int64 size_bytes = 4;
+  int64 timestamp = 5;
+}
+
+message GetRequest {
+  string file_id = 1;
+}
+
+message GetResponse {
+  bytes content = 1;
+  map<string, string> metadata = 2;
+  int64 size_bytes = 3;
+}
+
+message ExistsRequest {
+  string file_id = 1;
+}
+
+message ExistsResponse {
+  bool exists = 1;
+  int64 size_bytes = 2;
+}
+
+message GetProofRequest {
+  string file_id = 1;
+}
+
+message GetProofResponse {
+  string file_id = 1;
+  string root_hash = 2;
+  MerkleProof merkle_proof = 3;
+  int64 timestamp = 4;
+}
+
+message MerkleProof {
+  repeated bytes layers = 1;
+  repeated int32 indices = 2;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  string version = 2;
+}
+

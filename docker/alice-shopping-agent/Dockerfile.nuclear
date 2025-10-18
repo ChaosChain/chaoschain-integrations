@@ -1,0 +1,11 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy dependencies and agent
+COPY requirements.txt alice_agent.py ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Ultra-simple: Python script that logs everything and keeps running
+CMD ["python", "-u", "-c", "import os, sys, time; print('=== CONTAINER STARTED ==='); print(f'PORT={os.getenv(\"PORT\", \"UNSET\")}'); print(f'PWD={os.getcwd()}'); print(f'Python: {sys.version}'); print('Files in /app:'); import subprocess; subprocess.run(['ls', '-la', '/app']); print('=== STARTING GUNICORN ==='); sys.stdout.flush(); os.execlp('gunicorn', 'gunicorn', '--bind', f'0.0.0.0:{os.getenv(\"PORT\", \"8080\")}', '--workers', '1', '--worker-class', 'gthread', '--threads', '4', '--timeout', '180', '--access-logfile', '-', '--error-logfile', '-', '--log-level', 'info', 'alice_agent:app')"]
+

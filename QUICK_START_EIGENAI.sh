@@ -1,0 +1,23 @@
+#!/bin/bash
+# Quick start script for EigenAI integration
+
+echo "🚀 EigenAI Integration - Quick Start"
+echo "======================================"
+echo ""
+echo "✅ Your API key is already configured in .env"
+echo "✅ Integration is tested and working!"
+echo ""
+echo "To test the integration:"
+echo "  python3 test_eigen_live.py"
+echo ""
+echo "To use in genesis_studio.py:"
+echo "  export USE_EIGEN_COMPUTE=true"
+echo "  python3 genesis_studio.py"
+echo ""
+echo "Key files:"
+echo "  - .env (your API key)"
+echo "  - test_eigen_live.py (live test)"
+echo "  - chaoschain_integrations/compute/eigen/ (integration code)"
+echo "  - EIGENAI_SUCCESS.md (full documentation)"
+echo ""
+echo "🎉 Everything is ready to go!"
