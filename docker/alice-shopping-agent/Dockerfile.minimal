@@ -1,8 +1,0 @@
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Ultra-minimal: just bash, echo, sleep
-# No Python imports, no complex logic
-CMD ["/bin/bash", "-c", "echo 'CONTAINER STARTED'; echo 'PORT='$PORT; echo 'PWD='$(pwd); ls -la /app; echo 'SLEEPING FOREVER'; while true; do echo 'Still alive...'; sleep 30; done"]
-
