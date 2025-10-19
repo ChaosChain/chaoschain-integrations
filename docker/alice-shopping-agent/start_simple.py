@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ultra-simple startup script that logs everything and starts gunicorn"""
+"""Ultra-simple startup script that logs startup info and starts gunicorn"""
 import os
 import sys
 import subprocess
@@ -9,13 +9,14 @@ print("CONTAINER STARTED")
 print("=" * 60)
 print(f"PORT = {os.getenv('PORT', 'UNSET')}")
 print(f"PWD = {os.getcwd()}")
-print(f"Python = {sys.version}")
-print(f"Python executable = {sys.executable}")
+print(f"Python = {sys.version.split()[0]}")  # Version only, no build info
 print("=" * 60)
 print("Files in /app:")
 subprocess.run(["ls", "-la", "/app"])
 print("=" * 60)
 print("STARTING GUNICORN...")
+print("=" * 60)
+print("⚠️  Secrets loaded from KMS (not displayed for security)")
 print("=" * 60)
 sys.stdout.flush()
 
