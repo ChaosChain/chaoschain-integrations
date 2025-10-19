@@ -384,13 +384,24 @@ class GenesisStudioX402Orchestrator:
         self.compute_provider = None
         self.compute_provider_name = compute_provider
         
+        # Initialize 0G storage for all providers (for data layer)
+        try:
+            from chaoschain_sdk.providers.storage import ZeroGStorageGRPC
+            self.zg_storage = ZeroGStorageGRPC(grpc_url="localhost:50051")
+            if self.zg_storage.is_available:
+                rprint("[green]✅ 0G Storage initialized for data layer[/green]")
+            else:
+                rprint("[yellow]⚠️  0G Storage not available - will skip storage steps[/yellow]")
+        except Exception as e:
+            rprint(f"[yellow]⚠️  0G Storage not available: {e}[/yellow]")
+            self.zg_storage = None
+        
+        # Initialize compute provider
         if compute_provider == "0g":
             try:
-                from chaoschain_sdk.providers.storage import ZeroGStorageGRPC
                 from chaoschain_sdk.providers.compute import ZeroGComputeGRPC, VerificationMethod
                 
                 self.zg_compute = ZeroGComputeGRPC(grpc_url="localhost:50051")
-                self.zg_storage = ZeroGStorageGRPC(grpc_url="localhost:50051")
                 
                 if self.zg_compute.is_available:
                     rprint("[green]✅ 0G Compute gRPC service available[/green]")
@@ -398,16 +409,10 @@ class GenesisStudioX402Orchestrator:
                     self.compute_provider_name = "0G Compute"
                 else:
                     rprint("[yellow]⚠️  0G Compute gRPC service not available[/yellow]")
-                
-                if self.zg_storage.is_available:
-                    rprint("[green]✅ 0G Storage gRPC service available[/green]")
-                else:
-                    rprint("[yellow]⚠️  0G Storage gRPC service not available[/yellow]")
                     
             except Exception as e:
-                rprint(f"[yellow]⚠️  0G providers not available: {e}[/yellow]")
+                rprint(f"[yellow]⚠️  0G Compute not available: {e}[/yellow]")
                 rprint("[yellow]   Will use CrewAI fallback for compute[/yellow]")
-                self.zg_storage = None
                 self.zg_compute = None
         
         # Display active compute provider
@@ -798,10 +803,19 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
         rprint(f"[green]💳 Payment Successful (Direct A0GI Transfer)[/green]")
         rprint(f"   From: Charlie")
         rprint(f"   To: Alice")
-        rprint(f"   Amount: {x402_payment_result.amount:.4f} A0GI")
-        rprint(f"   Transaction: {x402_payment_result.transaction_hash}")
-        tx_hash = x402_payment_result.transaction_hash if x402_payment_result.transaction_hash.startswith('0x') else f"0x{x402_payment_result.transaction_hash}"
-        rprint(f"   Explorer: https://chainscan-galileo.0g.ai/tx/{tx_hash}")
+        if isinstance(x402_payment_result, dict):
+            amount = x402_payment_result.get("amount", 0)
+            tx_hash = x402_payment_result.get("transaction_hash", x402_payment_result.get("tx_hash", "N/A"))
+        else:
+            amount = getattr(x402_payment_result, "amount", 0)
+            tx_hash = getattr(x402_payment_result, "transaction_hash", "N/A")
+        
+        rprint(f"   Amount: {amount:.4f} A0GI" if isinstance(amount, (int, float)) else f"   Amount: {amount}")
+        rprint(f"   Transaction: {tx_hash}")
+        if tx_hash and tx_hash != "N/A":
+            if not tx_hash.startswith('0x'):
+                tx_hash = f"0x{tx_hash}"
+            rprint(f"   Explorer: https://chainscan-galileo.0g.ai/tx/{tx_hash}")
         rprint(f"   Service: Smart Shopping Service")
         rprint(f"   Network: 0G Galileo Testnet")
         
