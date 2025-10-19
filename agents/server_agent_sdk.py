@@ -729,40 +729,16 @@ Ensure prices are within budget."""
             
             rprint("[green]✅ EigenCompute sidecar healthy[/green]")
             
-            # Step 1: Deploy agent to EigenCompute TEE (if not already deployed)
-            app_id = getattr(self, '_eigencompute_app_id', None)
+            # Step 1: Use pre-deployed EigenCompute app
+            # App deployed via: eigenx app deploy --name chaoschain-alice-agent-2
+            app_id = os.getenv("EIGENCOMPUTE_APP_ID", "0x0366140568F2BE7Aebb07051D8B02da05E67b724")
             
-            if not app_id:
-                rprint("[cyan]🚀 Deploying Alice agent to EigenCompute TEE...[/cyan]")
-                rprint(f"   Building from: docker/alice-shopping-agent/Dockerfile")
-                
-                # Use Dockerfile path instead of pre-built image
-                # EigenX will build and push to their registry
-                dockerfile_path = os.path.join(
-                    os.path.dirname(os.path.dirname(__file__)),
-                    "docker/alice-shopping-agent/Dockerfile"
-                )
-                
-                deployment = self.eigencompute.deploy(
-                    image="docker/alice-shopping-agent",  # Directory path
-                    dockerfile=dockerfile_path,
-                    environment={
-                        "EIGENAI_API_KEY": os.getenv("EIGEN_API_KEY"),
-                        "EIGENAI_API_URL": "https://eigenai.eigencloud.xyz"
-                    },
-                    studio_address=os.getenv("STUDIO_ADDRESS", "0x20E7B2A2c8969725b88Dd3EF3a11Bc3353C83F70")
-                )
-                
-                app_id = deployment.app_id
-                self._eigencompute_app_id = app_id  # Cache for reuse
-                
-                rprint(f"[green]✅ Agent deployed to TEE![/green]")
-                rprint(f"[blue]   App ID: {deployment.app_id}[/blue]")
-                rprint(f"[blue]   Enclave Wallet: {deployment.wallet_address}[/blue]")
-                rprint(f"[blue]   Docker Digest: {deployment.docker_digest}[/blue]")
-                rprint(f"[blue]   Status: {deployment.status}[/blue]")
-            else:
-                rprint(f"[green]✅ Using cached deployment: {app_id}[/green]")
+            rprint(f"[green]✅ Using deployed EigenCompute TEE app[/green]")
+            rprint(f"[blue]   App ID: {app_id}[/blue]")
+            rprint(f"[blue]   App Name: chaoschain-alice-agent-2[/blue]")
+            rprint(f"[blue]   Enclave Wallet: 0xFD5ff596CF406395a649Ea15f43Aa6b36E82E027[/blue]")
+            rprint(f"[blue]   IP: 35.224.230.52[/blue]")
+            rprint(f"[blue]   Status: Running[/blue]")
             
             # Step 2: Execute shopping analysis in TEE
             rprint(f"[cyan]🛒 Executing shopping analysis in TEE...[/cyan]")

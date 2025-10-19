@@ -12,6 +12,14 @@ from rich.panel import Panel
 # Add paths
 sys.path.insert(0, os.path.dirname(__file__))
 
+# Set hyphenated env vars for SDK (can't be in .env due to eigenx parser)
+if os.getenv("BASE_SEPOLIA_RPC_URL"):
+    os.environ["BASE-SEPOLIA_RPC_URL"] = os.environ["BASE_SEPOLIA_RPC_URL"]
+if os.getenv("BASE_SEPOLIA_PRIVATE_KEY"):
+    os.environ["BASE-SEPOLIA_PRIVATE_KEY"] = os.environ["BASE_SEPOLIA_PRIVATE_KEY"]
+if os.getenv("BASE_SEPOLIA_CHAIN_ID"):
+    os.environ["BASE-SEPOLIA_CHAIN_ID"] = os.environ["BASE_SEPOLIA_CHAIN_ID"]
+
 from agents.server_agent_sdk import GenesisServerAgentSDK
 from agents.validator_agent_sdk import GenesisValidatorAgentSDK
 from chaoschain_sdk.types import AgentRole, NetworkConfig
