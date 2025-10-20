@@ -275,7 +275,9 @@ class GenesisStudioX402Orchestrator:
         
         # Step 6: Work Execution with Process Integrity (Alice)
         rprint("\n[blue]🔧 Step 6: Alice performing smart shopping with ChaosChain Process Integrity...[/blue]")
-        analysis_data, process_integrity_proof = self._execute_smart_shopping_with_integrity()
+        # Extract intent ID from mandate for process integrity linking
+        intent_id = getattr(intent_mandate.get("intent_mandate"), "intent_id", None) if isinstance(intent_mandate, dict) else getattr(intent_mandate, "intent_id", None)
+        analysis_data, process_integrity_proof = self._execute_smart_shopping_with_integrity(intent_id=intent_id)
         rprint("[green]✅ Smart shopping completed with process integrity proof[/green]")
         
         # Step 7: Evidence Storage (Alice) - Using 0G Storage
@@ -418,11 +420,10 @@ class GenesisStudioX402Orchestrator:
         # Display active compute provider
         rprint(f"[bold green]🔧 Active Compute Provider: {compute_provider.upper()}[/bold green]")
         
-        # Choose network based on compute provider
-        if compute_provider == "0g":
-            network = NetworkConfig.ZEROG_TESTNET
-        else:
-            network = NetworkConfig.BASE_SEPOLIA
+        # Use 0G network for data layer (storage) - consistent with Triple-Verified Stack
+        # Compute can be EigenCompute (Layer 2) while using 0G for data (Layer 3)
+        network = NetworkConfig.ZEROG_TESTNET
+        rprint(f"[cyan]🌐 Network: 0G Testnet (for data layer storage)[/cyan]")
         
         self.alice_agent = GenesisServerAgentSDK(
             agent_name="Alice",
@@ -573,9 +574,11 @@ class GenesisStudioX402Orchestrator:
         
         return cart_mandate
 
-    def _execute_smart_shopping_with_integrity(self) -> tuple[Dict[str, Any], Any]:
+    def _execute_smart_shopping_with_integrity(self, intent_id: Optional[str] = None) -> tuple[Dict[str, Any], Any]:
         """Execute smart shopping with Process Integrity verification (EigenAI/0G/CrewAI)"""
         
+        if intent_id:
+            rprint(f"[cyan]🔗 Linking to AP2 Intent ID: {intent_id}[/cyan]")
         rprint(f"[yellow]🤖 Alice performing smart shopping using {os.getenv('COMPUTE_PROVIDER', 'CrewAI').upper()} (TEE-verified)...[/yellow]")
         
         # Use agent SDK which handles provider routing (EigenAI, 0G, or CrewAI)
@@ -583,7 +586,8 @@ class GenesisStudioX402Orchestrator:
             item_type="winter_jacket",
             color="green", 
             budget=150.0,
-            premium_tolerance=0.20
+            premium_tolerance=0.20,
+            intent_id=intent_id  # Link to AP2 intent
         )
         return analysis_result["analysis"], analysis_result["process_integrity_proof"]
         

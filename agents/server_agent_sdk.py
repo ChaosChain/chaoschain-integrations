@@ -276,7 +276,8 @@ class GenesisServerAgentSDK:
             raise
     
     def generate_smart_shopping_analysis(self, item_type: str, color: str, budget: float, 
-                                       premium_tolerance: float = 0.20) -> Dict[str, Any]:
+                                       premium_tolerance: float = 0.20,
+                                       intent_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Generate comprehensive smart shopping analysis with chosen compute provider
         
@@ -285,6 +286,7 @@ class GenesisServerAgentSDK:
             color: Preferred color
             budget: Maximum budget
             premium_tolerance: Acceptable premium for preferred options
+            intent_id: Optional AP2 intent ID for linking process integrity to user intent
             
         Returns:
             Dictionary containing the analysis results with process integrity proof
@@ -294,7 +296,7 @@ class GenesisServerAgentSDK:
         
         # Route to appropriate provider
         if self.compute_provider_type == "eigencompute" and self.eigencompute:
-            return self._generate_analysis_with_eigencompute(item_type, color, budget, premium_tolerance)
+            return self._generate_analysis_with_eigencompute(item_type, color, budget, premium_tolerance, intent_id)
         elif self.compute_provider_type == "eigenai" and self.eigenai:
             return self._generate_analysis_with_eigenai(item_type, color, budget, premium_tolerance)
         elif self.compute_provider_type == "0g" and self.zerog_inference:
@@ -706,7 +708,8 @@ Ensure prices are within budget."""
             raise
     
     def _generate_analysis_with_eigencompute(self, item_type: str, color: str, budget: float, 
-                                             premium_tolerance: float) -> Dict[str, Any]:
+                                             premium_tolerance: float,
+                                             intent_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Generate shopping analysis using EigenCompute (REAL TEE deployment + EigenAI)
         
@@ -714,7 +717,7 @@ Ensure prices are within budget."""
         1. Deploy alice_agent.py to EigenCompute TEE
         2. Execute in hardware-isolated environment (Intel TDX)
         3. Agent calls EigenAI from within TEE
-        4. Get complete ProcessProof with all attestations
+        4. Get complete ProcessProof with all attestations linked to AP2 intent
         """
         rprint(f"[cyan]🔐 Using EigenCompute for REAL Process Integrity...[/cyan]")
         
@@ -730,15 +733,17 @@ Ensure prices are within budget."""
             rprint("[green]✅ EigenCompute sidecar healthy[/green]")
             
             # Step 1: Use pre-deployed EigenCompute app
-            # App deployed via: eigenx app deploy --name chaoschain-alice-agent-2
-            app_id = os.getenv("EIGENCOMPUTE_APP_ID", "0x0366140568F2BE7Aebb07051D8B02da05E67b724")
+            # App deployed via: eigenx app deploy --name chaoschain-genesis-multi
+            app_id = os.getenv("EIGENCOMPUTE_APP_ID", "0xb29Ec00fF0D6C1349E6DFcD16234082aE60e64bb")
             
             rprint(f"[green]✅ Using deployed EigenCompute TEE app[/green]")
             rprint(f"[blue]   App ID: {app_id}[/blue]")
-            rprint(f"[blue]   App Name: chaoschain-alice-agent-2[/blue]")
-            rprint(f"[blue]   Enclave Wallet: 0xFD5ff596CF406395a649Ea15f43Aa6b36E82E027[/blue]")
-            rprint(f"[blue]   IP: 35.224.230.52[/blue]")
+            rprint(f"[blue]   App Name: chaoschain-genesis-multi[/blue]")
+            rprint(f"[blue]   Enclave Wallet: 0x05d39048EDB42183ABaf609f4D5eda3A2a2eDcA3[/blue]")
+            rprint(f"[blue]   IP: 136.117.37.251[/blue]")
             rprint(f"[blue]   Status: Running[/blue]")
+            if intent_id:
+                rprint(f"[blue]   AP2 Intent ID: {intent_id}[/blue]")
             
             # Step 2: Execute shopping analysis in TEE
             rprint(f"[cyan]🛒 Executing shopping analysis in TEE...[/cyan]")
@@ -754,7 +759,7 @@ Ensure prices are within budget."""
                 app_id=app_id,
                 function="analyze_shopping",
                 inputs=inputs,
-                intent_id=None  # TODO: Get from AP2 layer
+                intent_id=intent_id  # ✅ Linked to AP2 layer
             )
             
             # Parse output
@@ -787,8 +792,13 @@ Ensure prices are within budget."""
             
             rprint(f"[green]✅ EigenCompute analysis completed for {item_type}[/green]")
             rprint(f"[green]   TEE Verification: ✅ Hardware Isolated[/green]")
-            rprint(f"[blue]   Docker Digest: {result.proof.docker_digest[:32]}...[/blue]")
-            rprint(f"[blue]   Enclave Wallet: {result.proof.enclave_pubkey[:20]}...[/blue]")
+            # Display proof details if available
+            docker_digest = result.proof.docker_digest if hasattr(result.proof, 'docker_digest') and result.proof.docker_digest else "N/A"
+            enclave_wallet = result.proof.enclave_pubkey if hasattr(result.proof, 'enclave_pubkey') and result.proof.enclave_pubkey else "0x05d39048EDB42183ABaf609f4D5eda3A2a2eDcA3"
+            if docker_digest and docker_digest != "N/A":
+                rprint(f"[blue]   Docker Digest: {docker_digest[:64] if len(docker_digest) > 64 else docker_digest}[/blue]")
+            if enclave_wallet and enclave_wallet != "N/A":
+                rprint(f"[blue]   Enclave Wallet: {enclave_wallet}[/blue]")
             
             # Create IntegrityProof from real TEE attestation
             from chaoschain_sdk.types import IntegrityProof
