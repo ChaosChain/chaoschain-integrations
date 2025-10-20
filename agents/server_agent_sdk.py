@@ -148,6 +148,7 @@ class GenesisServerAgentSDK:
         self.compute_provider_type = compute_provider if not use_0g_inference else "0g"
         
         # Initialize ChaosChain SDK with AP2 and Process Integrity
+        rprint(f"[cyan]🔄 Initializing ChaosChain SDK for {agent_name}...[/cyan]")
         self.sdk = ChaosChainAgentSDK(
             agent_name=agent_name,
             agent_domain=agent_domain,
@@ -156,16 +157,21 @@ class GenesisServerAgentSDK:
             enable_ap2=enable_ap2,
             enable_process_integrity=enable_process_integrity
         )
+        rprint(f"[green]✅ ChaosChain SDK initialized for {agent_name}[/green]")
         
         # Initialize compute providers
         self.eigenai = None
         self.eigencompute = None
         self.zerog_inference = None
         
+        rprint(f"[cyan]🔄 Initializing compute provider: {self.compute_provider_type}...[/cyan]")
+        
         if self.compute_provider_type == "eigencompute":
             try:
                 import os
+                rprint("[cyan]   Importing EigenCompute adapter...[/cyan]")
                 from chaoschain_integrations.compute.eigencompute import EigenComputeAdapter
+                rprint("[cyan]   Creating EigenCompute adapter instance...[/cyan]")
                 sidecar_url = os.getenv("EIGENCOMPUTE_SIDECAR_URL", "http://localhost:8080")
                 self.eigencompute = EigenComputeAdapter(sidecar_url=sidecar_url)
                 rprint(f"[green]🤖 EigenCompute adapter initialized (Real TEE deployment)[/green]")

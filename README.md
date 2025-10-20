@@ -1,236 +1,357 @@
 # ChaosChain Integrations
 
-Partner adapters for [ChaosChain SDK](https://github.com/ChaosChain/chaoschain) - enabling decentralized storage, compute, and attestation for the Triple-Verified Stack.
+Partner adapters for [ChaosChain SDK](https://github.com/ChaosChain/chaoschain) - enabling decentralized storage, compute, and attestation services.
 
+[![CI](https://github.com/ChaosChain/chaoschain-integrations/actions/workflows/ci.yml/badge.svg)](https://github.com/ChaosChain/chaoschain-integrations/actions)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Overview
 
-This repository provides **production-ready adapters** for integrating partner services with ChaosChain's Triple-Verified Stack:
-
-- **Layer 1 (Intent)**: AP2 intent and cart mandates
-- **Layer 2 (Process)**: EigenCompute TEE + EigenAI verified inference
-- **Layer 3 (Data)**: 0G decentralized storage
+This repository contains **adapters** (plugins) that integrate partner services with the ChaosChain SDK. Each adapter implements a standard protocol (`StorageBackend`, `ComputeBackend`, `AttestationBackend`) allowing seamless swapping of providers.
 
 ### Supported Integrations
 
-| Category | Provider | Status | Features |
-|----------|----------|--------|----------|
-| **Compute (TEE)** | EigenCompute | ✅ Production | Intel TDX, multi-agent support |
-| **Compute (LLM)** | EigenAI | ✅ Production | Deterministic inference, signed outputs |
-| **Storage** | 0G Network | ✅ Production | Decentralized KV store |
-| **Attestation** | Chainlink CRE | 🚧 Coming | Cross-chain verification |
+| Category | Provider | Status | Install |
+|----------|----------|--------|---------|
+| **Storage** | ZeroG (0G) | Alpha | `[zerog]` |
+| **Storage** | IPFS (Pinata) | Alpha | `[pinata]` |
+| **Compute** | ZeroG (0G) | Alpha | `[zerog]` |
+| **Compute** | Eigen | Alpha | `[eigen]` |
+| **Attestation** | Chainlink CRE | Stub | `[cre]` |
 
 ## Installation
 
+### Base Install
+
 ```bash
-# Install from source
-git clone https://github.com/ChaosChain/chaoschain-integrations.git
-cd chaoschain-integrations
-pip install -e .
+pip install chaoschain-integrations
+```
+
+### With Specific Adapters
+
+```bash
+# Install with ZeroG support (storage + compute)
+pip install chaoschain-integrations[zerog]
+
+# Install with Eigen compute support
+pip install chaoschain-integrations[eigen]
+
+# Install with Pinata IPFS support
+pip install chaoschain-integrations[pinata]
+
+# Install with Chainlink CRE support
+pip install chaoschain-integrations[cre]
+
+# Install all adapters
+pip install chaoschain-integrations[all]
+
+# Install with dev tools
+pip install chaoschain-integrations[dev]
 ```
 
 ## Quick Start
 
-### EigenCompute + EigenAI Process Integrity
+### Storage: ZeroG Example
 
-Run multi-agent TEE application:
+```python
+from chaoschain_sdk import ChaosChainAgentSDK, NetworkConfig
+from chaoschain_integrations.storage.zerog import ZeroGStorageAdapter
 
-```bash
-# 1. Set up environment
-cp .env.example .env
-# Add your keys: EIGEN_API_KEY, BASE_SEPOLIA_PRIVATE_KEY, BASE_SEPOLIA_RPC_URL
+# Initialize ZeroG storage adapter
+storage = ZeroGStorageAdapter(
+    grpc_url="localhost:50051",
+    api_key="your_api_key",
+)
 
-# 2. Start EigenCompute sidecar
-cd sidecars/eigencompute/go
-./start.sh &
+# Use with ChaosChain SDK
+sdk = ChaosChainAgentSDK(
+    agent_name="MyAgent",
+    agent_domain="example.com",
+    agent_role="server",
+    network=NetworkConfig.ETHEREUM_SEPOLIA,
+    storage_provider=storage,  # Inject adapter
+)
 
-# 3. Run Genesis Studio demo
-python3 genesis_studio.py
+# Store evidence
+content = b"Important evidence data"
+result = storage.put(content)
+print(f"Stored at: {result.uri}")
+print(f"Proof: {result.proof.content_hash}")
+
+# Retrieve evidence
+retrieved = storage.get(result.uri)
+assert retrieved == content
 ```
 
-**What it does:**
-- Alice (shopping analyst) runs in EigenCompute TEE
-- Bob (validator) verifies analysis in TEE
-- Charlie (market analyst) provides context
-- All agents call EigenAI from within TEE
-- Complete ProcessProof with signatures
+### Storage: Pinata IPFS Example
 
-### Direct TEE Endpoints
+```python
+from chaoschain_integrations.storage.ipfs_pinata import PinataStorageAdapter
 
-Test deployed agents directly:
+# Initialize with JWT
+storage = PinataStorageAdapter(jwt="your_pinata_jwt")
+
+# Store to IPFS
+result = storage.put(
+    b"Hello IPFS!",
+    metadata={"name": "greeting.txt"}
+)
+print(f"IPFS CID: {result.proof.content_hash}")
+print(f"Gateway URLs: {result.alternative_uris}")
+```
+
+### Compute: Eigen Example
+
+```python
+from chaoschain_sdk import ChaosChainAgentSDK, NetworkConfig
+from chaoschain_integrations.compute.eigen import EigenComputeAdapter
+
+# Initialize Eigen compute adapter
+compute = EigenComputeAdapter(
+    api_url="http://localhost:8082",
+    api_key="your_api_key",
+    use_grpc=True,
+)
+
+# Use with ChaosChain SDK
+sdk = ChaosChainAgentSDK(
+    agent_name="EigenAgent",
+    agent_domain="example.com",
+    agent_role="server",
+    network=NetworkConfig.ETHEREUM_SEPOLIA,
+    compute_provider=compute,  # Inject adapter
+    enable_process_integrity=True,
+)
+
+# Submit ML inference job
+task = {
+    "task": "inference",
+    "model": "llama-3-70b",
+    "prompt": "Explain blockchain in simple terms",
+    "verification": "tee-ml",
+}
+
+job_id = compute.submit(task)
+result = compute.result(job_id, wait=True, timeout_s=600)
+
+print(f"Output: {result.output}")
+print(f"TEE Attestation: {result.proof.attestation}")
+print(f"Enclave Key: {result.proof.enclave_pubkey}")
+```
+
+### Switching Providers
+
+Adapters are **pluggable** - swap providers without changing your application code:
+
+```python
+# Use ZeroG storage
+from chaoschain_integrations.storage.zerog import ZeroGStorageAdapter
+storage = ZeroGStorageAdapter(grpc_url="localhost:50051")
+
+# Or use Pinata IPFS
+from chaoschain_integrations.storage.ipfs_pinata import PinataStorageAdapter
+storage = PinataStorageAdapter(jwt="your_jwt")
+
+# Your SDK code remains the same!
+sdk = ChaosChainAgentSDK(..., storage_provider=storage)
+```
+
+## Configuration
+
+All adapters support environment-based configuration via `.env` files:
 
 ```bash
-# Health check
-curl http://136.117.37.251:8080/health
+# ZeroG
+ZEROG_GRPC_URL=localhost:50051
+ZEROG_API_KEY=your_key
+ZEROG_TIMEOUT_SECONDS=60
 
-# Alice: Shopping analysis
-curl -X POST http://136.117.37.251:8080/alice/analyze_shopping \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "item_type": "winter_jacket",
-    "color": "green",
-    "budget": 150,
-    "premium_tolerance": 0.20
-  }'
+# Eigen
+EIGEN_API_URL=http://localhost:8082
+EIGEN_API_KEY=your_key
+EIGEN_USE_GRPC=true
+EIGEN_TIMEOUT_SECONDS=600
 
-# Bob: Validate analysis
-curl -X POST http://136.117.37.251:8080/bob/validate_analysis \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "item_type": "winter_jacket",
-    "final_price": 135.50,
-    "confidence": 0.92
-  }'
+# Pinata
+PINATA_JWT=your_jwt_token
+PINATA_TIMEOUT_SECONDS=60
 
-# Charlie: Market analysis
-curl -X POST http://136.117.37.251:8080/charlie/market_analysis \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "product_category": "winter_jackets",
-    "region": "US"
-  }'
+# Chainlink CRE
+CRE_API_URL=https://cre-api.chainlink.com
+CRE_API_KEY=your_key
+CRE_TIMEOUT_SECONDS=30
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FORMAT=json
 ```
+
+See [`.env.example`](.env.example) for complete configuration options.
 
 ## Architecture
 
-### Triple-Verified Stack
-
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ Layer 1: Intent Verification (AP2)                         │
-│ • ERC-8004 agent identity registry                         │
-│ • Intent mandates with cryptographic commitments           │
-│ • Cart mandates for transaction approval                   │
-└─────────────────────────────────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────────────┐
-│ Layer 2: Process Integrity (EigenCompute + EigenAI)        │
-│ • Intel TDX TEE execution                                   │
-│ • Deterministic LLM inference                               │
-│ • Hardware attestations                                     │
-│ • Signed execution proofs                                   │
-└─────────────────────────────────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────────────┐
-│ Layer 3: Data Verifiability (0G Network)                   │
-│ • Decentralized storage                                     │
-│ • Merkle proofs                                             │
-│ • Immutable audit trail                                     │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────┐
+│      ChaosChain Agent SDK           │
+│   (chaoschain-sdk)                  │
+└──────────┬──────────────────────────┘
+           │
+           │ Protocol Interfaces:
+           │ - StorageBackend
+           │ - ComputeBackend
+           │ - AttestationBackend
+           │
+┌──────────▼──────────────────────────┐
+│  ChaosChain Integrations (THIS)     │
+│  ┌────────────┐  ┌────────────┐    │
+│  │  Storage   │  │  Compute   │    │
+│  │  Adapters  │  │  Adapters  │    │
+│  ├────────────┤  ├────────────┤    │
+│  │ • ZeroG    │  │ • ZeroG    │    │
+│  │ • Pinata   │  │ • Eigen    │    │
+│  └────────────┘  └────────────┘    │
+│  ┌────────────┐                     │
+│  │Attestation │                     │
+│  ├────────────┤                     │
+│  │ • CRE      │                     │
+│  └────────────┘                     │
+└──────────┬──────────────────────────┘
+           │
+           │ gRPC/HTTP/Native SDKs
+           │
+┌──────────▼──────────────────────────┐
+│    Partner Services                 │
+│  • 0G Network                       │
+│  • Eigen                            │
+│  • Pinata / IPFS                    │
+│  • Chainlink                        │
+└─────────────────────────────────────┘
 ```
 
-### EigenCompute Integration
+## Sidecars
 
-**Multi-Agent TEE Application:**
-- Docker image: `sumeetchaos/chaoschain-genesis-agents:v3`
-- App ID: `0xb29Ec00fF0D6C1349E6DFcD16234082aE60e64bb`
-- Enclave Wallet: `0x05d39048EDB42183ABaf609f4D5eda3A2a2eDcA3`
-- IP: `136.117.37.251`
+Some adapters use **sidecar services** (Go/Rust) to interface with native SDKs:
 
-**Agents:**
-- **Alice**: Shopping analysis with EigenAI
-- **Bob**: Validation and quality scoring
-- **Charlie**: Market analysis and trends
+### ZeroG Sidecar (gRPC)
+
+```bash
+cd sidecars/zerog/go
+make build
+./bin/zerog-storage-bridge --port 50051
+./bin/zerog-compute-bridge --port 50052
+```
+
+### Eigen Sidecar (gRPC)
+
+```bash
+cd sidecars/eigen/go
+make build
+./bin/eigen-compute-bridge --port 50053
+```
+
+See [`sidecars/` documentation](sidecars/) for details.
 
 ## Development
 
-### Project Structure
-
-```
-chaoschain-integrations/
-├── chaoschain_integrations/
-│   ├── compute/
-│   │   └── eigencompute/      # EigenCompute TEE adapter
-│   ├── storage/
-│   │   └── zerog/              # 0G storage adapter
-│   └── common/                 # Shared types
-├── docker/
-│   └── genesis-agents/         # Multi-agent TEE application
-├── sidecars/
-│   └── eigencompute/go/        # EigenCompute REST API bridge
-├── agents/
-│   └── server_agent_sdk.py    # Agent SDK with TEE support
-└── genesis_studio.py           # Full stack demo
-
-```
-
-### Running Tests
+### Setup
 
 ```bash
-# Test EigenAI process integrity
-python3 test_eigenai_process_integrity.py
+# Clone repository
+git clone https://github.com/ChaosChain/chaoschain-integrations.git
+cd chaoschain-integrations
 
-# Test Genesis Studio workflow
-export COMPUTE_PROVIDER=eigencompute
-python3 genesis_studio.py
+# Create virtual environment
+make venv
+source venv/bin/activate
+
+# Install with dev dependencies
+make install-dev
 ```
 
-### Deploying to EigenCompute
+### Testing
 
 ```bash
-# 1. Build and push Docker image
-cd docker/genesis-agents
-docker build --platform linux/amd64 -t your-username/app:tag .
-docker push your-username/app:tag
+# Run all tests
+make test
 
-# 2. Deploy to TEE
-eigenx app deploy --name your-app --log-visibility public your-username/app:tag
+# Run unit tests only
+make test-unit
 
-# 3. Update Go sidecar
-cd sidecars/eigencompute/go
-# Edit main.go: update appRegistry with new app ID and IP
-go build -o eigenbridge .
-./start.sh &
+# Run contract tests
+make test-contract
+
+# Run with coverage
+make test-cov
 ```
 
-## Production Deployment
-
-### Environment Variables
+### Code Quality
 
 ```bash
-# EigenAI
-EIGEN_API_KEY=sk-...
-EIGEN_API_URL=https://eigenai.eigencloud.xyz
+# Format code
+make fmt
 
-# Base Sepolia
-BASE_SEPOLIA_RPC_URL=https://base-sepolia.g.alchemy.com/v2/...
-BASE_SEPOLIA_PRIVATE_KEY=0x...
-BASE_SEPOLIA_CHAIN_ID=84532
+# Lint code
+make lint
 
-# 0G Network
-ZG_FLOW_ADDRESS=0x...
-ZG_INDEXER_RPC=https://rpc-testnet.0g.ai
+# Type check
+make typecheck
 ```
 
-### Security
+### Building
 
-- All secrets encrypted via EigenCompute KMS
-- Private keys never exposed in logs
-- TEE-bound enclave wallets
-- Hardware attestations (Intel TDX)
+```bash
+# Build distribution packages
+make build
+
+# Publish to PyPI (requires credentials)
+make publish
+```
+
+## Documentation
+
+- [Architecture & Design](docs/architecture.md)
+- [Adding New Adapters](CONTRIBUTING.md)
+- [ZeroG Storage Adapter](chaoschain_integrations/storage/zerog/README.md)
+- [Pinata Storage Adapter](chaoschain_integrations/storage/ipfs_pinata/README.md)
+- [ZeroG Compute Adapter](chaoschain_integrations/compute/zerog/README.md)
+- [Eigen Compute Adapter](chaoschain_integrations/compute/eigen/README.md)
+- [Chainlink CRE Adapter](chaoschain_integrations/attest/chainlink_cre/README.md)
+
+## Compatibility Matrix
+
+| Integration Version | ChaosChain SDK | Python | Status |
+|---------------------|----------------|--------|--------|
+| 0.1.0 | >=0.2.0 | 3.9-3.12 | Alpha |
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-## License
+### Adding a New Adapter
 
-MIT License - see LICENSE file for details.
-
-## Resources
-
-- [ChaosChain SDK](https://github.com/ChaosChain/chaoschain)
-- [EigenCompute Docs](https://docs.eigencloud.xyz)
-- [EigenAI API](https://eigenai.eigencloud.xyz)
-- [0G Network](https://0g.ai)
+1. Create adapter module: `chaoschain_integrations/<category>/<provider>/`
+2. Implement protocol: `StorageBackend`, `ComputeBackend`, or `AttestationBackend`
+3. Add tests (unit + contract tests)
+4. Update `pyproject.toml` with optional dependencies
+5. Submit PR
 
 ## Support
 
-- Issues: [GitHub Issues](https://github.com/ChaosChain/chaoschain-integrations/issues)
-- Discussions: [GitHub Discussions](https://github.com/ChaosChain/chaoschain-integrations/discussions)
+- **Issues**: [GitHub Issues](https://github.com/ChaosChain/chaoschain-integrations/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/ChaosChain/chaoschain-integrations/discussions)
+- **Documentation**: [docs.chaoschain.io](https://docs.chaoschain.io)
+
+## License
+
+[MIT License](LICENSE)
+
+## Acknowledgments
+
+- [0G Labs](https://0g.ai/) - Decentralized storage and compute
+- [EigenLayer](https://www.eigenlayer.xyz/) - Restaking and compute
+- [Pinata](https://pinata.cloud/) - IPFS pinning services
+- [Chainlink](https://chain.link/) - Decentralized oracle network
+
+---
+Built with ❤️ by the [ChaosChain Labs](https://chaoschain.io) team
