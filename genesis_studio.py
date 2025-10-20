@@ -275,8 +275,11 @@ class GenesisStudioX402Orchestrator:
         
         # Step 6: Work Execution with Process Integrity (Alice)
         rprint("\n[blue]🔧 Step 6: Alice performing smart shopping with ChaosChain Process Integrity...[/blue]")
-        # Extract intent ID from mandate for process integrity linking
-        intent_id = getattr(intent_mandate.get("intent_mandate"), "intent_id", None) if isinstance(intent_mandate, dict) else getattr(intent_mandate, "intent_id", None)
+        # Extract intent ID from mandate for process integrity linking (Layer 1 → Layer 2 link)
+        intent_obj = intent_mandate.get("intent_mandate") if isinstance(intent_mandate, dict) else intent_mandate
+        intent_id = getattr(intent_obj, "intent_id", None) if intent_obj else None
+        if intent_id:
+            rprint(f"[cyan]🔗 Linking execution to AP2 Intent: {intent_id}[/cyan]")
         analysis_data, process_integrity_proof = self._execute_smart_shopping_with_integrity(intent_id=intent_id)
         rprint("[green]✅ Smart shopping completed with process integrity proof[/green]")
         
@@ -387,13 +390,17 @@ class GenesisStudioX402Orchestrator:
         self.compute_provider_name = compute_provider
         
         # Initialize 0G storage for all providers (for data layer)
+        # Uses CLI-based storage (no sidecar needed!)
         try:
-            from chaoschain_sdk.providers.storage import ZeroGStorageGRPC
-            self.zg_storage = ZeroGStorageGRPC(grpc_url="localhost:50051")
+            from chaoschain_sdk.providers.storage.zerog_storage import ZeroGStorage
+            self.zg_storage = ZeroGStorage()
             if self.zg_storage.is_available:
-                rprint("[green]✅ 0G Storage initialized for data layer[/green]")
+                rprint("[green]✅ 0G Storage CLI initialized for data layer[/green]")
+                rprint("[cyan]   Using official 0G Storage CLI (no sidecar needed)[/cyan]")
             else:
-                rprint("[yellow]⚠️  0G Storage not available - will skip storage steps[/yellow]")
+                rprint("[yellow]⚠️  0G Storage CLI not available[/yellow]")
+                rprint("[cyan]   Install: git clone https://github.com/0gfoundation/0g-storage-client && cd 0g-storage-client && go build[/cyan]")
+                self.zg_storage = None
         except Exception as e:
             rprint(f"[yellow]⚠️  0G Storage not available: {e}[/yellow]")
             self.zg_storage = None
@@ -563,6 +570,15 @@ class GenesisStudioX402Orchestrator:
             jwt_payload = self.alice_sdk.google_ap2_integration.verify_jwt_token(cart_mandate.merchant_authorization)
             mandate_verified = bool(jwt_payload)
         
+        # Display created mandates
+        rprint(f"[cyan]📝 Created Google AP2 IntentMandate[/cyan]")
+        if hasattr(intent_mandate, 'user_description'):
+            rprint(f"[cyan]   Description: {intent_mandate.user_description[:100]}...[/cyan]")
+        if hasattr(intent_mandate, 'intent_id'):
+            rprint(f"[cyan]   Intent ID: {intent_mandate.intent_id}[/cyan]")
+        rprint(f"[cyan]🛒 Created Google AP2 CartMandate with JWT[/cyan]")
+        rprint(f"[cyan]   Cart ID: cart_winter_jacket_001[/cyan]")
+        
         self.results["ap2_intent"] = {
             "intent_mandate": intent_mandate,
             "cart_mandate": cart_mandate,
@@ -572,13 +588,16 @@ class GenesisStudioX402Orchestrator:
             "jwt_verified": mandate_verified
         }
         
-        return cart_mandate
+        # Return dict with both mandates
+        return {
+            "intent_mandate": intent_mandate,
+            "cart_mandate": cart_mandate,
+            "verified": mandate_verified
+        }
 
     def _execute_smart_shopping_with_integrity(self, intent_id: Optional[str] = None) -> tuple[Dict[str, Any], Any]:
         """Execute smart shopping with Process Integrity verification (EigenAI/0G/CrewAI)"""
         
-        if intent_id:
-            rprint(f"[cyan]🔗 Linking to AP2 Intent ID: {intent_id}[/cyan]")
         rprint(f"[yellow]🤖 Alice performing smart shopping using {os.getenv('COMPUTE_PROVIDER', 'CrewAI').upper()} (TEE-verified)...[/yellow]")
         
         # Use agent SDK which handles provider routing (EigenAI, 0G, or CrewAI)
