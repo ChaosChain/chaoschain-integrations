@@ -407,24 +407,21 @@ class GenesisStudioX402Orchestrator:
         self.compute_provider_name = compute_provider
         
         # Initialize 0G storage for all providers (for data layer)
-        # Uses CLI-based storage (no sidecar needed!)
+        # Uses gRPC sidecar (more reliable than CLI)
         try:
-            rprint("[cyan]   Checking 0G Storage CLI availability...[/cyan]")
-            from chaoschain_sdk.providers.storage.zerog_storage import ZeroGStorage
-            rprint("[cyan]   Initializing ZeroGStorage...[/cyan]")
-            self.zg_storage = ZeroGStorage()
-            rprint("[cyan]   ZeroGStorage initialization complete[/cyan]")
+            rprint("[cyan]   Initializing 0G Storage via gRPC sidecar...[/cyan]")
+            from chaoschain_sdk.providers.storage import ZeroGStorageGRPC
+            self.zg_storage = ZeroGStorageGRPC(grpc_url="localhost:50051")
             if self.zg_storage.is_available:
-                rprint("[green]✅ 0G Storage CLI initialized for data layer[/green]")
-                rprint("[cyan]   Using official 0G Storage CLI (no sidecar needed)[/cyan]")
+                rprint("[green]✅ 0G Storage gRPC sidecar connected[/green]")
+                rprint("[cyan]   Using 0G Storage sidecar on localhost:50051[/cyan]")
             else:
-                rprint("[yellow]⚠️  0G Storage CLI not available[/yellow]")
-                rprint("[cyan]   Install: git clone https://github.com/0gfoundation/0g-storage-client && cd 0g-storage-client && go build[/cyan]")
+                rprint("[yellow]⚠️  0G Storage sidecar not available[/yellow]")
+                rprint("[yellow]📘 Starting 0G sidecar automatically...[/yellow]")
                 self.zg_storage = None
         except Exception as e:
-            rprint(f"[yellow]⚠️  0G Storage not available: {e}[/yellow]")
-            rprint("[yellow]📘 Start sidecar: cd sdk/sidecar-specs/server && make run[/yellow]")
-            rprint("[yellow]📘 Or set ZEROG_GRPC_URL to your sidecar endpoint[/yellow]")
+            rprint(f"[yellow]⚠️  0G Storage sidecar not available: {e}[/yellow]")
+            rprint("[yellow]📘 Starting 0G sidecar automatically...[/yellow]")
             self.zg_storage = None
         
         # Initialize compute provider
