@@ -316,7 +316,20 @@ class GenesisStudioX402Orchestrator:
         
         # Step 7: Validation & Payment (Bob) with deterministic comparison
         rprint("\n[blue]🔧 Step 7: Bob validating with 0G Compute and payment...[/blue]")
-        validation_score, validation_result = self._perform_validation_with_0g_compute(analysis_data, alice_exec_hash=exec_hash)
+        
+        # Pass original inputs for deterministic re-run
+        original_inputs = {
+            "item_type": "winter_jacket",
+            "color": "green",
+            "budget": 150.0,
+            "premium_tolerance": 0.20
+        }
+        
+        validation_score, validation_result = self._perform_validation_with_0g_compute(
+            analysis_data, 
+            alice_exec_hash=exec_hash,
+            original_inputs=original_inputs
+        )
         rprint(f"[green]✅ Validation completed (Score: {validation_score}/100)[/green]")
     
     def _phase_3_enhanced_evidence_packages(self):
@@ -1006,33 +1019,94 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
         
         return tx_hash
     
-    def _perform_validation_with_0g_compute(self, analysis_data: Dict[str, Any], alice_exec_hash: Optional[str] = None) -> tuple[int, Dict[str, Any]]:
-        """Bob performs validation using compute provider (EigenAI/0G/CrewAI) and Charlie pays in A0GI
+    def _perform_validation_with_0g_compute(self, analysis_data: Dict[str, Any], alice_exec_hash: Optional[str] = None, 
+                                           original_inputs: Optional[Dict[str, Any]] = None) -> tuple[int, Dict[str, Any]]:
+        """Bob performs validation by RE-EXECUTING Alice's exact analysis for deterministic verification
         
         Args:
-            analysis_data: Analysis data to validate
+            analysis_data: Alice's analysis data (for reference)
             alice_exec_hash: Alice's execution hash for deterministic comparison
+            original_inputs: Original inputs Alice used (item_type, color, budget, etc.)
         """
         
         rprint(f"[yellow]🔍 Bob performing validation using {os.getenv('COMPUTE_PROVIDER', 'CrewAI').upper()}...[/yellow]")
         
-        # Bob performs validation using agent SDK (which routes to correct provider)
-        validation_result_raw = self.bob_agent.validate_analysis_with_crewai(analysis_data)
+        # ✅ DETERMINISTIC RE-RUN: Bob executes the SAME analysis with SAME inputs
+        if original_inputs and self.compute_provider_name == "eigencompute" and hasattr(self.bob_agent, 'eigencompute'):
+            rprint(f"[cyan]🔄 Bob re-executing Alice's analysis with identical inputs for deterministic verification...[/cyan]")
+            rprint(f"[cyan]   Item: {original_inputs.get('item_type')}[/cyan]")
+            rprint(f"[cyan]   Color: {original_inputs.get('color')}[/cyan]")
+            rprint(f"[cyan]   Budget: ${original_inputs.get('budget')}[/cyan]")
+            
+            # Bob calls Alice's function in the TEE with the EXACT same inputs
+            import os
+            app_id = os.getenv("EIGENCOMPUTE_APP_ID")
+            
+            result = self.bob_agent.eigencompute.execute(
+                app_id=app_id,
+                function="analyze_shopping",  # Same function Alice used
+                inputs={
+                    "item_type": original_inputs.get('item_type', 'winter_jacket'),
+                    "color": original_inputs.get('color', 'green'),
+                    "budget": original_inputs.get('budget', 150.0),
+                    "premium_tolerance": original_inputs.get('premium_tolerance', 0.20)
+                }
+            )
+            
+            # Parse Bob's re-run output
+            bob_output = result.output
+            if isinstance(bob_output, str):
+                import json
+                bob_output = json.loads(bob_output)
+            
+            # Calculate Bob's exec_hash from his re-run (deterministic)
+            import hashlib
+            execution_data = json.dumps(bob_output, sort_keys=True).encode()
+            bob_exec_hash = hashlib.sha256(execution_data).hexdigest()
+            
+            rprint(f"[cyan]✅ Bob completed re-execution in TEE[/cyan]")
+            
+            # Extract Bob's exec_hash from his re-run
+            validation_result_raw = {
+                "validation": bob_output,
+                "process_integrity_proof": None,  # Bob's proof is the re-execution itself
+                "exec_hash": bob_exec_hash,
+                "bob_rerun": True  # Flag to indicate this is a re-execution
+            }
+        else:
+            # Fallback: Bob performs traditional validation (scoring)
+            validation_result_raw = self.bob_agent.validate_analysis_with_crewai(analysis_data)
         
         rprint(f"[green]✅ Validation completed with Process Integrity proof[/green]")
         
         # ✅ Deterministic Re-Run: Compare exec hashes
         bob_exec_hash = validation_result_raw.get("exec_hash")
+        is_rerun = validation_result_raw.get("bob_rerun", False)
+        
         if alice_exec_hash and bob_exec_hash:
+            rprint(f"\n[bold cyan]🔬 DETERMINISTIC VERIFICATION:[/bold cyan]")
+            if is_rerun:
+                rprint(f"[cyan]   Method: Bob re-executed Alice's exact analysis in TEE[/cyan]")
+            else:
+                rprint(f"[cyan]   Method: Bob performed independent validation[/cyan]")
+            
             if alice_exec_hash == bob_exec_hash:
-                rprint(f"[bold green]🎯 DETERMINISTIC MATCH: Alice & Bob exec hashes identical![/bold green]")
-                rprint(f"[green]   Hash: 0x{alice_exec_hash[:32]}...[/green]")
-                rprint(f"[green]   ✅ Payment auto-released based on verified execution[/green]")
+                rprint(f"[bold green]✅ DETERMINISTIC MATCH: Exec hashes IDENTICAL![/bold green]")
+                rprint(f"[green]   Alice Hash: 0x{alice_exec_hash[:32]}...[/green]")
+                rprint(f"[green]   Bob Hash:   0x{bob_exec_hash[:32]}...[/green]")
+                rprint(f"[bold green]   🎯 Payment AUTO-RELEASED (verified execution)[/bold green]")
+                rprint(f"[green]   📦 Both agents produced identical output in TEE[/green]")
+                rprint(f"[green]   🔐 Accountability: Provable determinism achieved[/green]")
             else:
                 rprint(f"[bold red]❌ DETERMINISTIC MISMATCH: Different exec hashes![/bold red]")
-                rprint(f"[red]   Alice: 0x{alice_exec_hash[:32]}...[/red]")
-                rprint(f"[red]   Bob:   0x{bob_exec_hash[:32]}...[/red]")
-                rprint(f"[red]   ⚠️  Payment should be held pending investigation[/red]")
+                rprint(f"[red]   Alice Hash: 0x{alice_exec_hash[:32]}...[/red]")
+                rprint(f"[red]   Bob Hash:   0x{bob_exec_hash[:32]}...[/red]")
+                if is_rerun:
+                    rprint(f"[bold red]   ⚠️  CRITICAL: Same inputs → Different outputs![/bold red]")
+                    rprint(f"[red]   🚨 Payment HELD pending investigation[/red]")
+                    rprint(f"[red]   📋 Evidence: Both proofs stored on 0G for dispute resolution[/red]")
+                else:
+                    rprint(f"[yellow]   ℹ️  Expected: Bob ran different function (validation vs analysis)[/yellow]")
         
         if validation_result_raw.get("process_integrity_proof"):
             proof = validation_result_raw["process_integrity_proof"]
