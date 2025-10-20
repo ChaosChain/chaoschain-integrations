@@ -1028,6 +1028,9 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
             alice_exec_hash: Alice's execution hash for deterministic comparison
             original_inputs: Original inputs Alice used (item_type, color, budget, etc.)
         """
+        import os
+        import json
+        import hashlib
         
         rprint(f"[yellow]🔍 Bob performing validation using {os.getenv('COMPUTE_PROVIDER', 'CrewAI').upper()}...[/yellow]")
         
@@ -1039,7 +1042,6 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
             rprint(f"[cyan]   Budget: ${original_inputs.get('budget')}[/cyan]")
             
             # Bob calls Alice's function in the TEE with the EXACT same inputs
-            import os
             app_id = os.getenv("EIGENCOMPUTE_APP_ID")
             
             result = self.bob_agent.eigencompute.execute(
@@ -1056,11 +1058,9 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
             # Parse Bob's re-run output
             bob_output = result.output
             if isinstance(bob_output, str):
-                import json
                 bob_output = json.loads(bob_output)
             
             # Calculate Bob's exec_hash from his re-run (deterministic)
-            import hashlib
             execution_data = json.dumps(bob_output, sort_keys=True).encode()
             bob_exec_hash = hashlib.sha256(execution_data).hexdigest()
             
