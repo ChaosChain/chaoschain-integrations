@@ -792,13 +792,29 @@ Ensure prices are within budget."""
             
             rprint(f"[green]✅ EigenCompute analysis completed for {item_type}[/green]")
             rprint(f"[green]   TEE Verification: ✅ Hardware Isolated[/green]")
-            # Display proof details if available
+            
+            # Display EigenCompute proof details
             docker_digest = result.proof.docker_digest if hasattr(result.proof, 'docker_digest') and result.proof.docker_digest else "N/A"
             enclave_wallet = result.proof.enclave_pubkey if hasattr(result.proof, 'enclave_pubkey') and result.proof.enclave_pubkey else "0x05d39048EDB42183ABaf609f4D5eda3A2a2eDcA3"
             if docker_digest and docker_digest != "N/A":
                 rprint(f"[blue]   Docker Digest: {docker_digest[:64] if len(docker_digest) > 64 else docker_digest}[/blue]")
             if enclave_wallet and enclave_wallet != "N/A":
                 rprint(f"[blue]   Enclave Wallet: {enclave_wallet}[/blue]")
+            
+            # Display EigenAI details (from TEE execution)
+            if isinstance(analysis_data, dict) and "tee_execution" in analysis_data:
+                tee_exec = analysis_data["tee_execution"]
+                rprint(f"[cyan]📊 EigenAI Inference (from within TEE):[/cyan]")
+                if "eigenai_job_id" in tee_exec:
+                    rprint(f"[cyan]   Job ID: {tee_exec['eigenai_job_id']}[/cyan]")
+                if "eigenai_model" in tee_exec:
+                    rprint(f"[cyan]   Model: {tee_exec['eigenai_model']}[/cyan]")
+                if "eigenai_signature" in tee_exec:
+                    sig = tee_exec['eigenai_signature']
+                    sig_display = sig[:32] + "..." if sig and len(sig) > 32 else sig
+                    rprint(f"[cyan]   Signature: {sig_display}[/cyan]")
+                if "agent" in tee_exec:
+                    rprint(f"[cyan]   Agent: {tee_exec['agent']}[/cyan]")
             
             # Create IntegrityProof from real TEE attestation
             from chaoschain_sdk.types import IntegrityProof
