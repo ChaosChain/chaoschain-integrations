@@ -470,6 +470,16 @@ class GenesisValidatorAgentSDK:
             enable_process_integrity=enable_process_integrity
         )
         
+        # Initialize 0G Storage for proof publishing (independent of compute provider)
+        self.zg_storage = None
+        try:
+            from chaoschain_sdk.providers.storage import ZeroGStorageGRPC
+            self.zg_storage = ZeroGStorageGRPC(grpc_url="localhost:50051")
+            if self.zg_storage.is_available:
+                rprint("[cyan]✅ 0G Storage initialized for proof publishing[/cyan]")
+        except Exception as e:
+            rprint(f"[yellow]⚠️  0G Storage not available for proof publishing: {e}[/yellow]")
+        
         # Initialize compute providers
         self.eigenai = None
         self.eigencompute = None
@@ -1207,7 +1217,8 @@ Be thorough and objective in your validation."""
             
             return {
                 "validation": validation_data,
-                "process_integrity_proof": integrity_proof
+                "process_integrity_proof": integrity_proof,
+                "exec_hash": execution_hash  # ✅ For deterministic comparison with Alice
             }
             
         except Exception as e:

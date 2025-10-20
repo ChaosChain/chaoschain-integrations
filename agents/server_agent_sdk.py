@@ -159,6 +159,16 @@ class GenesisServerAgentSDK:
         )
         rprint(f"[green]✅ ChaosChain SDK initialized for {agent_name}[/green]")
         
+        # Initialize 0G Storage for proof publishing (independent of compute provider)
+        self.zg_storage = None
+        try:
+            from chaoschain_sdk.providers.storage import ZeroGStorageGRPC
+            self.zg_storage = ZeroGStorageGRPC(grpc_url="localhost:50051")
+            if self.zg_storage.is_available:
+                rprint("[cyan]✅ 0G Storage initialized for proof publishing[/cyan]")
+        except Exception as e:
+            rprint(f"[yellow]⚠️  0G Storage not available for proof publishing: {e}[/yellow]")
+        
         # Initialize compute providers
         self.eigenai = None
         self.eigencompute = None
@@ -889,11 +899,11 @@ Ensure prices are within budget."""
                 process_proof_json["proof_hash"] = proof_signature
                 process_proof_json["signature"] = f"0x{proof_signature}"
                 
-                # Publish to 0G Storage via SDK
+                # Publish to 0G Storage via agent's storage client
                 proof_cid = None
-                if hasattr(self.sdk, 'zg_storage') and self.sdk.zg_storage:
+                if self.zg_storage and self.zg_storage.is_available:
                     proof_bytes = json.dumps(process_proof_json, indent=2).encode()
-                    storage_result = self.sdk.zg_storage.put(proof_bytes, mime="application/json")
+                    storage_result = self.zg_storage.put(proof_bytes, mime="application/json")
                     proof_cid = storage_result.cid if hasattr(storage_result, 'cid') else str(storage_result)
                     rprint(f"[green]✅ ProcessProof published to 0G Storage[/green]")
                     rprint(f"[blue]   Proof CID: {proof_cid}[/blue]")

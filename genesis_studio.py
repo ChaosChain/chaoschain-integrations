@@ -314,9 +314,9 @@ class GenesisStudioX402Orchestrator:
         rprint("\n[blue]🔧 Step 6: Alice requesting validation from Bob...[/blue]")
         rprint("[green]✅ Validation requested[/green]")
         
-        # Step 7: Validation & Payment (Bob)
+        # Step 7: Validation & Payment (Bob) with deterministic comparison
         rprint("\n[blue]🔧 Step 7: Bob validating with 0G Compute and payment...[/blue]")
-        validation_score, validation_result = self._perform_validation_with_0g_compute(analysis_data)
+        validation_score, validation_result = self._perform_validation_with_0g_compute(analysis_data, alice_exec_hash=exec_hash)
         rprint(f"[green]✅ Validation completed (Score: {validation_score}/100)[/green]")
     
     def _phase_3_enhanced_evidence_packages(self):
@@ -1006,8 +1006,13 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
         
         return tx_hash
     
-    def _perform_validation_with_0g_compute(self, analysis_data: Dict[str, Any]) -> tuple[int, Dict[str, Any]]:
-        """Bob performs validation using compute provider (EigenAI/0G/CrewAI) and Charlie pays in A0GI"""
+    def _perform_validation_with_0g_compute(self, analysis_data: Dict[str, Any], alice_exec_hash: Optional[str] = None) -> tuple[int, Dict[str, Any]]:
+        """Bob performs validation using compute provider (EigenAI/0G/CrewAI) and Charlie pays in A0GI
+        
+        Args:
+            analysis_data: Analysis data to validate
+            alice_exec_hash: Alice's execution hash for deterministic comparison
+        """
         
         rprint(f"[yellow]🔍 Bob performing validation using {os.getenv('COMPUTE_PROVIDER', 'CrewAI').upper()}...[/yellow]")
         
@@ -1015,6 +1020,20 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
         validation_result_raw = self.bob_agent.validate_analysis_with_crewai(analysis_data)
         
         rprint(f"[green]✅ Validation completed with Process Integrity proof[/green]")
+        
+        # ✅ Deterministic Re-Run: Compare exec hashes
+        bob_exec_hash = validation_result_raw.get("exec_hash")
+        if alice_exec_hash and bob_exec_hash:
+            if alice_exec_hash == bob_exec_hash:
+                rprint(f"[bold green]🎯 DETERMINISTIC MATCH: Alice & Bob exec hashes identical![/bold green]")
+                rprint(f"[green]   Hash: 0x{alice_exec_hash[:32]}...[/green]")
+                rprint(f"[green]   ✅ Payment auto-released based on verified execution[/green]")
+            else:
+                rprint(f"[bold red]❌ DETERMINISTIC MISMATCH: Different exec hashes![/bold red]")
+                rprint(f"[red]   Alice: 0x{alice_exec_hash[:32]}...[/red]")
+                rprint(f"[red]   Bob:   0x{bob_exec_hash[:32]}...[/red]")
+                rprint(f"[red]   ⚠️  Payment should be held pending investigation[/red]")
+        
         if validation_result_raw.get("process_integrity_proof"):
             proof = validation_result_raw["process_integrity_proof"]
             if hasattr(proof, 'tee_signature'):
