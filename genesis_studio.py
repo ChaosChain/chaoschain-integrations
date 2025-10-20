@@ -169,6 +169,23 @@ from agents.client_agent_genesis import GenesisClientAgent
 # Load environment variables
 load_dotenv()
 
+# Fix hyphenated env vars for SDK compatibility
+# SDK expects hyphenated versions (e.g., 0G-TESTNET_RPC_URL) but we use underscores in .env
+if os.getenv("ZEROG_TESTNET_RPC_URL") and not os.getenv("0G-TESTNET_RPC_URL"):
+    os.environ["0G-TESTNET_RPC_URL"] = os.environ["ZEROG_TESTNET_RPC_URL"]
+if os.getenv("ZEROG_TESTNET_PRIVATE_KEY") and not os.getenv("0G-TESTNET_PRIVATE_KEY"):
+    os.environ["0G-TESTNET_PRIVATE_KEY"] = os.environ["ZEROG_TESTNET_PRIVATE_KEY"]
+if os.getenv("ZEROG_TESTNET_CHAIN_ID") and not os.getenv("0G-TESTNET_CHAIN_ID"):
+    os.environ["0G-TESTNET_CHAIN_ID"] = os.environ["ZEROG_TESTNET_CHAIN_ID"]
+
+# Set defaults if not provided
+if not os.getenv("0G-TESTNET_RPC_URL"):
+    os.environ["0G-TESTNET_RPC_URL"] = "https://evmrpc-testnet.0g.ai"
+    print("✅ Using default 0G Testnet RPC: https://evmrpc-testnet.0g.ai")
+if not os.getenv("0G-TESTNET_CHAIN_ID"):
+    os.environ["0G-TESTNET_CHAIN_ID"] = "16600"
+    print("✅ Using default 0G Testnet Chain ID: 16600")
+
 class GenesisStudioX402Orchestrator:
     """Enhanced Genesis Studio orchestrator with x402 payment integration"""
     
@@ -392,8 +409,11 @@ class GenesisStudioX402Orchestrator:
         # Initialize 0G storage for all providers (for data layer)
         # Uses CLI-based storage (no sidecar needed!)
         try:
+            rprint("[cyan]   Checking 0G Storage CLI availability...[/cyan]")
             from chaoschain_sdk.providers.storage.zerog_storage import ZeroGStorage
+            rprint("[cyan]   Initializing ZeroGStorage...[/cyan]")
             self.zg_storage = ZeroGStorage()
+            rprint("[cyan]   ZeroGStorage initialization complete[/cyan]")
             if self.zg_storage.is_available:
                 rprint("[green]✅ 0G Storage CLI initialized for data layer[/green]")
                 rprint("[cyan]   Using official 0G Storage CLI (no sidecar needed)[/cyan]")
@@ -403,6 +423,8 @@ class GenesisStudioX402Orchestrator:
                 self.zg_storage = None
         except Exception as e:
             rprint(f"[yellow]⚠️  0G Storage not available: {e}[/yellow]")
+            rprint("[yellow]📘 Start sidecar: cd sdk/sidecar-specs/server && make run[/yellow]")
+            rprint("[yellow]📘 Or set ZEROG_GRPC_URL to your sidecar endpoint[/yellow]")
             self.zg_storage = None
         
         # Initialize compute provider
@@ -432,6 +454,7 @@ class GenesisStudioX402Orchestrator:
         network = NetworkConfig.ZEROG_TESTNET
         rprint(f"[cyan]🌐 Network: 0G Testnet (for data layer storage)[/cyan]")
         
+        rprint("[cyan]   Creating Alice agent...[/cyan]")
         self.alice_agent = GenesisServerAgentSDK(
             agent_name="Alice",
             agent_domain="alice.chaoschain-studio.com",
@@ -442,7 +465,9 @@ class GenesisStudioX402Orchestrator:
             compute_provider=compute_provider,
             eigenai_api_key=os.getenv("EIGEN_API_KEY")
         )
+        rprint("[green]   Alice agent created![/green]")
         
+        rprint("[cyan]   Creating Bob agent...[/cyan]")
         self.bob_agent = GenesisValidatorAgentSDK(
             agent_name="Bob",
             agent_domain="bob.chaoschain-studio.com",
@@ -453,7 +478,9 @@ class GenesisStudioX402Orchestrator:
             compute_provider=compute_provider,
             eigenai_api_key=os.getenv("EIGEN_API_KEY")
         )
+        rprint("[green]   Bob agent created![/green]")
         
+        rprint("[cyan]   Creating Charlie agent...[/cyan]")
         self.charlie_agent = GenesisClientAgent(
             agent_name="Charlie",
             agent_domain="charlie.chaoschain-studio.com",
@@ -462,6 +489,7 @@ class GenesisStudioX402Orchestrator:
             enable_ap2=True,  
             enable_process_integrity=False  # Client doesn't need process integrity
         )
+        rprint("[green]   Charlie agent created![/green]")
         
         # Keep SDK references for compatibility with existing code
         self.alice_sdk = self.alice_agent.sdk
@@ -573,11 +601,16 @@ class GenesisStudioX402Orchestrator:
         # Display created mandates
         rprint(f"[cyan]📝 Created Google AP2 IntentMandate[/cyan]")
         if hasattr(intent_mandate, 'user_description'):
-            rprint(f"[cyan]   Description: {intent_mandate.user_description[:100]}...[/cyan]")
+            rprint(f"   Description: {intent_mandate.user_description[:100]}...")
         if hasattr(intent_mandate, 'intent_id'):
-            rprint(f"[cyan]   Intent ID: {intent_mandate.intent_id}[/cyan]")
+            rprint(f"   Intent ID: {intent_mandate.intent_id}")
+            rprint(f"   Expires: {intent_mandate.expiry_time}")
         rprint(f"[cyan]🛒 Created Google AP2 CartMandate with JWT[/cyan]")
-        rprint(f"[cyan]   Cart ID: cart_winter_jacket_001[/cyan]")
+        rprint(f"   Cart ID: cart_winter_jacket_001")
+        rprint(f"   Items: {len(cart_mandate.items) if hasattr(cart_mandate, 'items') else 1} items, Total: 2.0 USDC")
+        if hasattr(cart_mandate, 'merchant_authorization'):
+            jwt_preview = cart_mandate.merchant_authorization[:50] + "..." if len(cart_mandate.merchant_authorization) > 50 else cart_mandate.merchant_authorization
+            rprint(f"   JWT: {jwt_preview}")
         
         self.results["ap2_intent"] = {
             "intent_mandate": intent_mandate,
@@ -588,7 +621,7 @@ class GenesisStudioX402Orchestrator:
             "jwt_verified": mandate_verified
         }
         
-        # Return dict with both mandates
+        # Return dict with both mandates for intent_id extraction
         return {
             "intent_mandate": intent_mandate,
             "cart_mandate": cart_mandate,
@@ -598,6 +631,8 @@ class GenesisStudioX402Orchestrator:
     def _execute_smart_shopping_with_integrity(self, intent_id: Optional[str] = None) -> tuple[Dict[str, Any], Any]:
         """Execute smart shopping with Process Integrity verification (EigenAI/0G/CrewAI)"""
         
+        if intent_id:
+            rprint(f"[cyan]🔗 Linking to AP2 Intent ID: {intent_id}[/cyan]")
         rprint(f"[yellow]🤖 Alice performing smart shopping using {os.getenv('COMPUTE_PROVIDER', 'CrewAI').upper()} (TEE-verified)...[/yellow]")
         
         # Use agent SDK which handles provider routing (EigenAI, 0G, or CrewAI)
