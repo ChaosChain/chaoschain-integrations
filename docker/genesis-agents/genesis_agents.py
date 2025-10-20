@@ -44,6 +44,7 @@ def call_eigenai(prompt: str, seed: int = 42) -> dict:
             }
         ],
         "max_tokens": 1000,
+        "temperature": 0,  # ✅ Deterministic: same input → same output
         "seed": seed
     }
     

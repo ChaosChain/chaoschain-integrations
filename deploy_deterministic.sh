@@ -1,0 +1,17 @@
+#!/bin/bash
+
+echo "🚀 Deploying Deterministic Genesis Multi-Agent to EigenCompute..."
+echo ""
+echo "Image: sumeetchaos/chaoschain-genesis-multi:deterministic"
+echo ""
+echo "⚠️  You'll need to:"
+echo "1. Terminate the old app: eigenx app terminate chaoschain-genesis-multi"
+echo "2. Deploy new app: eigenx app deploy --name chaoschain-genesis-multi-deterministic --image sumeetchaos/chaoschain-genesis-multi:deterministic"
+echo "3. Upload .env file when prompted"
+echo "4. Wait for deployment and get the new APP_ID"
+echo "5. Update EIGENCOMPUTE_APP_ID in your .env"
+echo ""
+echo "Run these commands manually:"
+echo ""
+echo "eigenx app terminate chaoschain-genesis-multi"
+echo "eigenx app deploy --name chaoschain-genesis-multi-deterministic --image sumeetchaos/chaoschain-genesis-multi:deterministic"
