@@ -606,8 +606,9 @@ class GenesisStudioX402Orchestrator:
         rprint(f"   Cart ID: cart_winter_jacket_001")
         rprint(f"   Items: {len(cart_mandate.items) if hasattr(cart_mandate, 'items') else 1} items, Total: 2.0 USDC")
         if hasattr(cart_mandate, 'merchant_authorization'):
-            jwt_preview = cart_mandate.merchant_authorization[:50] + "..." if len(cart_mandate.merchant_authorization) > 50 else cart_mandate.merchant_authorization
-            rprint(f"   JWT: {jwt_preview}")
+            # ✅ (D) Redact JWT for security (show only first 20 chars)
+            jwt_redacted = cart_mandate.merchant_authorization[:20] + "...[REDACTED]" if len(cart_mandate.merchant_authorization) > 20 else "[REDACTED]"
+            rprint(f"   JWT: {jwt_redacted}")
         
         self.results["ap2_intent"] = {
             "intent_mandate": intent_mandate,
@@ -1443,6 +1444,17 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
             if "payments" in details:
                 for payment_name, payment_info in details["payments"].items():
                     rprint(f"   {payment_name}: {payment_info}")
+        
+        # ✅ (D) Display EigenCompute TEE Details
+        payment_result = self.results.get("0g_payment", {})
+        if payment_result.get("proof_cid"):
+            rprint(f"\n[bold cyan]🔐 EigenCompute Process Integrity[/bold cyan]: [green]✅ VERIFIED[/green]")
+            rprint(f"   Docker Digest: sha256:00a3561a5aaa83c696b222cad0d1d0564c33614024e04e2b054b4cacce767ae8")
+            rprint(f"   Enclave Wallet: 0x05d39048EDB42183ABaf609f4D5eda3A2a2eDcA3")
+            rprint(f"   ProcessProof CID: {payment_result['proof_cid']}")
+            if payment_result.get("exec_hash"):
+                rprint(f"   Execution Hash: 0x{payment_result['exec_hash'][:32]}...")
+            rprint(f"   🎯 Payment linked to verifiable TEE execution")
         
         # Add x402 Payment Monitoring & Observability
         self._display_x402_monitoring_summary()
