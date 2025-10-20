@@ -1065,19 +1065,39 @@ Be thorough and objective in your validation."""
         Validate analysis using EigenCompute (REAL TEE deployment + EigenAI)
         
         This is the CORRECT Process Integrity implementation for validation:
-        1. Deploy bob_agent.py to EigenCompute TEE
-        2. Execute in hardware-isolated environment (Intel TDX)
+        1. Use deployed multi-agent TEE app
+        2. Execute Bob's validation inside hardware-isolated environment (Intel TDX)
         3. Agent calls EigenAI from within TEE for validation
         4. Get complete ProcessProof with all attestations
+        5. Compare exec_hash with Alice's for deterministic verification
         """
         rprint(f"[cyan]🔐 Using EigenCompute for REAL Validation Process Integrity...[/cyan]")
         
         try:
-            # For testing, we'll use a mock deployment
-            rprint("[yellow]⚠️  EigenCompute validation not yet implemented[/yellow]")
-            rprint("[yellow]   Using mock ProcessProof for testing[/yellow]")
+            # Use real EigenCompute TEE execution via the adapter
+            if not self.eigencompute:
+                raise Exception("EigenCompute adapter not initialized")
             
-            # Detect subject
+            import os
+            app_id = os.getenv("EIGENCOMPUTE_APP_ID")
+            if not app_id:
+                raise Exception("EIGENCOMPUTE_APP_ID not set in environment")
+            
+            rprint(f"[cyan]🔍 Bob executing validation in TEE...[/cyan]")
+            rprint(f"[blue]   App ID: {app_id}[/blue]")
+            rprint(f"[blue]   Function: validate_analysis[/blue]")
+            
+            # Execute validation in TEE via EigenCompute adapter
+            result = self.eigencompute.execute(
+                app_id=app_id,
+                function="validate_analysis",
+                inputs={"analysis": analysis_data}
+            )
+            
+            # Parse validation output from TEE
+            validation_output = result.output
+            
+            # Detect subject for logging
             if "shopping_result" in analysis_data or "item_type" in analysis_data:
                 if "shopping_result" in analysis_data:
                     subject = analysis_data["shopping_result"].get("item_type", "Unknown")
@@ -1086,37 +1106,34 @@ Be thorough and objective in your validation."""
             else:
                 subject = analysis_data.get("symbol", "Unknown")
             
-            # Mock validation result
+            # Build validation_data from TEE response
             validation_data = {
                 "validation_timestamp": datetime.now().isoformat(),
                 "validated_symbol": subject,
                 "validation_criteria": "EigenCompute TEE-verified validation",
+                "overall_score": validation_output.get("overall_score", 0),
+                "quality_rating": validation_output.get("quality_rating", "Unknown"),
+                "pass_fail": validation_output.get("pass_fail", "UNKNOWN"),
+                "validation_summary": validation_output.get("validation_notes", ""),
                 "scoring_breakdown": {
-                    "data_completeness": 95,
-                    "technical_accuracy": 93,
-                    "price_reasonableness": 94,
-                    "recommendation_quality": 92,
-                    "methodology_soundness": 96
+                    "data_completeness": validation_output.get("data_completeness", 0),
+                    "technical_accuracy": validation_output.get("technical_accuracy", 0),
+                    "price_reasonableness": validation_output.get("price_reasonableness", 0),
+                    "merchant_reliability": validation_output.get("merchant_reliability", 0),
+                    "color_match_quality": validation_output.get("color_match_quality", 0)
                 },
-                "overall_score": 94,
-                "quality_rating": "Excellent",
-                "validation_summary": "Outstanding analysis verified in EigenCompute TEE with hardware attestation",
                 "detailed_assessment": {
-                    "strengths": [
-                        "Comprehensive analysis performed in hardware-isolated environment",
-                        "TEE attestation confirms code integrity",
-                        "Enclave wallet provides cryptographic binding"
-                    ],
-                    "weaknesses": [],
-                    "recommendations_for_improvement": []
+                    "confidence": validation_output.get("confidence_assessment", ""),
+                    "recommendations": validation_output.get("recommendations", [])
                 },
                 "validator_agent": f"{self.agent_name} (EigenCompute TEE)",
                 "eigencompute": {
-                    "app_id": "mock_validator_app_id",
-                    "enclave_wallet": "0xMOCK_VALIDATOR_ENCLAVE",
-                    "docker_digest": "sha256:MOCK_VALIDATOR_DIGEST",
+                    "app_id": app_id,
+                    "enclave_wallet": result.proof.enclave_pubkey if hasattr(result.proof, 'enclave_pubkey') else None,
+                    "docker_digest": result.proof.docker_digest if hasattr(result.proof, 'docker_digest') else None,
                     "tee_provider": "eigencompute",
-                    "tee_attestation": "MOCK_VALIDATOR_TEE_ATTESTATION"
+                    "tee_job_id": validation_output.get("tee_execution", {}).get("eigenai_job_id"),
+                    "tee_model": validation_output.get("tee_execution", {}).get("eigenai_model")
                 }
             }
             
@@ -1125,33 +1142,66 @@ Be thorough and objective in your validation."""
                 "validated_item": subject,
                 "score": validation_data["overall_score"],
                 "quality_rating": validation_data["quality_rating"],
+                "pass_fail": validation_data["pass_fail"],
                 "validation_result": validation_data,
-                "eigencompute_deployment": "mock",
+                "eigencompute_deployment": "production",
+                "app_id": app_id,
                 "timestamp": datetime.now().isoformat()
             })
             
             rprint(f"[green]✅ EigenCompute validation completed for {subject}[/green]")
             rprint(f"[blue]   Score: {validation_data['overall_score']}/100[/blue]")
+            rprint(f"[blue]   Pass/Fail: {validation_data['pass_fail']}[/blue]")
             rprint(f"[green]   TEE Verification: ✅ Hardware Isolated[/green]")
             
-            # Create IntegrityProof from TEE attestation
+            # Display Bob's EigenAI execution details
+            tee_exec = validation_output.get("tee_execution", {})
+            if tee_exec:
+                rprint(f"[cyan]📊 Bob's EigenAI Validation (from within TEE):[/cyan]")
+                if "eigenai_job_id" in tee_exec:
+                    rprint(f"[cyan]   Job ID: {tee_exec['eigenai_job_id']}[/cyan]")
+                if "eigenai_model" in tee_exec:
+                    rprint(f"[cyan]   Model: {tee_exec['eigenai_model']}[/cyan]")
+                if "agent" in tee_exec:
+                    rprint(f"[cyan]   Agent: {tee_exec['agent']}[/cyan]")
+                if "timestamp" in tee_exec:
+                    rprint(f"[cyan]   Timestamp: {tee_exec['timestamp']}[/cyan]")
+            
+            # Create IntegrityProof from REAL TEE attestation
             from chaoschain_sdk.types import IntegrityProof
             import hashlib
             
-            execution_data = json.dumps(validation_data, sort_keys=True).encode()
+            # Calculate execution hash from validation output (deterministic)
+            execution_data = json.dumps(validation_output, sort_keys=True).encode()
             execution_hash = hashlib.sha256(execution_data).hexdigest()
             
+            # Get docker digest from proof
+            docker_digest = result.proof.docker_digest if hasattr(result.proof, 'docker_digest') else None
+            enclave_wallet = result.proof.enclave_pubkey if hasattr(result.proof, 'enclave_pubkey') else None
+            
+            rprint(f"[blue]   Docker Digest: {docker_digest}[/blue]")
+            rprint(f"[blue]   Enclave Wallet: {enclave_wallet}[/blue]")
+            rprint(f"[blue]   Execution Hash: 0x{execution_hash[:16]}...[/blue]")
+            
             integrity_proof = IntegrityProof(
-                proof_id=f"eigencompute_validation_mock_001",
+                proof_id=f"eigencompute_validation_{app_id}_{tee_exec.get('eigenai_job_id', 'unknown')}",
                 function_name="validate_analysis",
-                code_hash="0x" + hashlib.sha256(b"bob-validator-agent").hexdigest(),
+                code_hash="0x" + hashlib.sha256(docker_digest.encode() if docker_digest else b"bob-validator").hexdigest(),
                 execution_hash=execution_hash,
                 timestamp=datetime.now(),
                 agent_name=self.agent_name,
                 verification_status="verified",
-                tee_attestation={"mock": True, "provider": "eigencompute"},
+                tee_attestation={
+                    "provider": "eigencompute",
+                    "app_id": app_id,
+                    "enclave_wallet": enclave_wallet,
+                    "docker_digest": docker_digest,
+                    "eigenai_job_id": tee_exec.get('eigenai_job_id'),
+                    "eigenai_model": tee_exec.get('eigenai_model'),
+                    "function": "validate_analysis"
+                },
                 tee_provider="eigencompute",
-                tee_job_id="mock_validator_app_id",
+                tee_job_id=tee_exec.get('eigenai_job_id'),
                 tee_execution_hash=execution_hash
             )
             
