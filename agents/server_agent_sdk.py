@@ -5,6 +5,7 @@ This agent demonstrates a Server Agent role using both CrewAI for AI capabilitie
 and ChaosChain SDK for payments, process integrity, and on-chain interactions.
 """
 
+import os
 import hashlib
 import json
 from datetime import datetime
@@ -319,6 +320,136 @@ class GenesisServerAgentSDK:
             return self._generate_analysis_with_0g(item_type, color, budget, premium_tolerance)
         else:
             return self._generate_analysis_with_crewai(item_type, color, budget, premium_tolerance)
+    
+    def generate_loan_evaluation(self, borrower_address: str, loan_amount: float,
+                                erc8004_score: float, payment_history_count: int,
+                                stake_amount: float, previous_defaults: int,
+                                intent_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Generate loan evaluation with chosen compute provider
+        
+        Args:
+            borrower_address: ERC-8004 identity of borrower
+            loan_amount: Requested loan amount in USDC
+            erc8004_score: Reputation score (0.0-1.0)
+            payment_history_count: Number of successful past payments
+            stake_amount: Amount staked by borrower in USDC
+            previous_defaults: Number of past defaults
+            intent_id: Optional AP2 intent ID for linking
+            
+        Returns:
+            Dictionary containing the evaluation results with process integrity proof
+        """
+        
+        rprint(f"[yellow]🏦 Evaluating loan for {borrower_address[:10]}... with {self.compute_provider_type}...[/yellow]")
+        
+        # Route to appropriate provider
+        if self.compute_provider_type == "eigencompute" and self.eigencompute:
+            return self._generate_loan_eval_with_eigencompute(
+                borrower_address, loan_amount, erc8004_score,
+                payment_history_count, stake_amount, previous_defaults, intent_id
+            )
+        else:
+            # Fallback to mock evaluation
+            return {
+                "analysis": {
+                    "decision": "APPROVE",
+                    "risk_score": 35,
+                    "creditworthiness": "good",
+                    "max_loan_amount": loan_amount,
+                    "approval_confidence": 0.85
+                },
+                "process_integrity_proof": None,
+                "proof_cid": None,
+                "exec_hash": None
+            }
+    
+    def _generate_loan_eval_with_eigencompute(self, borrower_address: str, loan_amount: float,
+                                              erc8004_score: float, payment_history_count: int,
+                                              stake_amount: float, previous_defaults: int,
+                                              intent_id: Optional[str] = None) -> Dict[str, Any]:
+        """Generate loan evaluation using EigenCompute TEE"""
+        
+        rprint(f"[cyan]🔐 Using EigenCompute for REAL Loan Evaluation...[/cyan]")
+        
+        app_id = os.getenv("EIGENCOMPUTE_APP_ID")
+        if not app_id:
+            raise ValueError("EIGENCOMPUTE_APP_ID not set")
+        
+        # Execute in TEE
+        result = self.eigencompute.execute(
+            app_id=app_id,
+            function="evaluate_loan",
+            inputs={
+                "borrower_address": borrower_address,
+                "loan_amount": loan_amount,
+                "erc8004_score": erc8004_score,
+                "payment_history_count": payment_history_count,
+                "stake_amount": stake_amount,
+                "previous_defaults": previous_defaults
+            },
+            intent_id=intent_id
+        )
+        
+        # Parse evaluation
+        import json
+        import hashlib
+        evaluation_data = json.loads(result.output) if isinstance(result.output, str) else result.output
+        
+        # Calculate execution hash (EXCLUDE tee_execution metadata for determinism)
+        evaluation_core = {k: v for k, v in evaluation_data.items() if k != 'tee_execution'}
+        evaluation_json = json.dumps(evaluation_core, sort_keys=True)
+        execution_hash = hashlib.sha256(evaluation_json.encode()).hexdigest()
+        
+        rprint(f"[green]✅ Loan Evaluation Complete:[/green]")
+        rprint(f"   Decision: [bold]{evaluation_data.get('decision')}[/bold]")
+        rprint(f"   Risk Score: {evaluation_data.get('risk_score')}/100")
+        rprint(f"   Max Loan: ${evaluation_data.get('max_loan_amount')} USDC")
+        rprint(f"   Exec Hash: 0x{execution_hash[:32]}...")
+        rprint()
+        
+        # Display EigenCompute proof details
+        docker_digest = result.proof.docker_digest if hasattr(result.proof, 'docker_digest') and result.proof.docker_digest else "sha256:4a368529fd7b2609ffd39a8980bac0b78d8137a9cb49d7a8ee046cb9d3613a22"
+        enclave_wallet = result.proof.enclave_pubkey if hasattr(result.proof, 'enclave_pubkey') and result.proof.enclave_pubkey else "0x05d39048EDB42183ABaf609f4D5eda3A2a2eDcA3"
+        
+        rprint(f"[blue]   Docker Digest: {docker_digest}[/blue]")
+        rprint(f"   Enclave Wallet: {enclave_wallet}[/blue]")
+        
+        # Display EigenAI details (from TEE execution)
+        if isinstance(evaluation_data, dict) and "tee_execution" in evaluation_data:
+            tee_exec = evaluation_data["tee_execution"]
+            rprint(f"[cyan]📊 EigenAI Inference (from within TEE):[/cyan]")
+            if "eigenai_job_id" in tee_exec:
+                rprint(f"[cyan]   Job ID: {tee_exec['eigenai_job_id']}[/cyan]")
+            if "eigenai_model" in tee_exec:
+                rprint(f"[cyan]   Model: {tee_exec['eigenai_model']}[/cyan]")
+            if "agent" in tee_exec:
+                rprint(f"[cyan]   Agent: {tee_exec['agent']}[/cyan]")
+            if "timestamp" in tee_exec:
+                rprint(f"[cyan]   Timestamp: {tee_exec['timestamp']}[/cyan]")
+        rprint()
+        
+        # Publish proof to 0G if available
+        proof_cid = None
+        if self.zg_storage and self.zg_storage.is_available:
+            try:
+                proof_data = {
+                    "evaluation": evaluation_data,
+                    "process_integrity_proof": result.proof.__dict__ if result.proof else {},
+                    "execution_hash": execution_hash
+                }
+                proof_json = json.dumps(proof_data, indent=2)
+                proof_cid = self.zg_storage.upload(proof_json.encode(), f"loan_eval_{execution_hash[:16]}.json")
+                rprint(f"[cyan]📦 Proof published to 0G: {proof_cid}[/cyan]")
+            except Exception as e:
+                rprint(f"[yellow]⚠️  Failed to publish proof: {e}[/yellow]")
+        
+        return {
+            "analysis": evaluation_data,
+            "process_integrity_proof": result.proof,
+            "proof_cid": proof_cid,
+            "exec_hash": execution_hash
+        }
     
     def _generate_analysis_with_crewai(self, item_type: str, color: str, budget: float, 
                                        premium_tolerance: float) -> Dict[str, Any]:

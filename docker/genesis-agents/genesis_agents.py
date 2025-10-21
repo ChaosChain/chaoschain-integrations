@@ -274,17 +274,20 @@ def charlie_request_loan(loan_amount: float, purpose: str, borrower_address: str
     """
     Charlie submits a loan request with predefined background data
     
-    Charlie is a registered agent on 0G network with:
-    - ERC-8004 identity: 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
+    Charlie's profile will be populated with:
+    - ERC-8004 identity: Provided by genesis_studio (from SDK wallet)
     - Good reputation score: 0.78
     - Solid payment history: 8 successful payments
     - Reasonable stake: 0.25 USDC (50% of requested loan)
     - Clean record: 0 defaults
     """
     
+    if not borrower_address:
+        raise ValueError("borrower_address is required - must be provided by genesis_studio from SDK wallet")
+    
     # Charlie's predefined background (consistent for deterministic testing)
     profile = {
-        "borrower_address": borrower_address or "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+        "borrower_address": borrower_address,  # From genesis_studio SDK
         "borrower_name": "Charlie (Borrower Agent)",
         "erc8004_score": 0.78,  # Good reputation
         "payment_history_count": 8,  # 8 successful past payments

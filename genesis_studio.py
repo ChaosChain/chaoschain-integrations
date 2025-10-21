@@ -230,12 +230,12 @@ class GenesisStudioX402Orchestrator:
     def _print_banner(self):
         """Print Genesis Studio banner"""
         banner = """
-[bold blue] CHAOSCHAIN GENESIS STUDIO - SDK with 0G INTEGRATION[/bold blue]
+[bold blue] CHAOSCHAIN GENESIS STUDIO[/bold blue]
 [bold cyan]Triple-Verified Stack Commercial Prototype[/bold cyan]
 
 [yellow] Triple-Verified Stack:[/yellow]
 • Layer 1: AP2 Intent Verification (Google)
-• Layer 2: Process Integrity (ChaosChain + 0G Compute)
+• Layer 2: Process Integrity (ChaosChain + EigenCompute or 0G Compute)
 • Layer 3: Adjudication/Accountability (ChaosChain)
 
 [green]🔗 ChaosChain owns 2/3 layers![/green]
@@ -282,16 +282,16 @@ class GenesisStudioX402Orchestrator:
         """Phase 2: Triple-Verified Stack Work & Payment"""
         
         rprint("\n[bold blue]📋 Phase 2: Triple-Verified Stack Work & Payment[/bold blue]")
-        rprint("[cyan]Alice performs smart shopping with AP2 intent verification, ChaosChain process integrity (0G Compute), and x402 payments (A0GI)[/cyan]")
+        rprint("[cyan]Alice evaluates micro-loan with AP2 intent verification, ChaosChain process integrity (EigenCompute TEE), and x402 payments (A0GI)[/cyan]")
         rprint("=" * 80)
         
         # Step 5: AP2 Intent Verification
-        rprint("\n[blue]🔧 Step 5: Creating AP2 intent mandate for smart shopping...[/blue]")
+        rprint("\n[blue]🔧 Step 5: Creating AP2 intent mandate for loan request...[/blue]")
         intent_mandate = self._create_ap2_intent_mandate()
         rprint("[green]✅ AP2 intent mandate created and verified[/green]")
         
         # Step 6: Work Execution with Process Integrity (Alice)
-        rprint("\n[blue]🔧 Step 6: Alice performing smart shopping with ChaosChain Process Integrity...[/blue]")
+        rprint("\n[blue]🔧 Step 6: Alice evaluating loan request with ChaosChain Process Integrity...[/blue]")
         # Extract intent ID from mandate for process integrity linking (Layer 1 → Layer 2 link)
         intent_obj = intent_mandate.get("intent_mandate") if isinstance(intent_mandate, dict) else intent_mandate
         intent_id = getattr(intent_obj, "intent_id", None) if intent_obj else None
@@ -318,14 +318,17 @@ class GenesisStudioX402Orchestrator:
         rprint("\n[blue]🔧 Step 7: Bob validating with 0G Compute and payment...[/blue]")
         
         # Pass original inputs for deterministic re-run
+        charlie_address = self.charlie_agent.wallet.address if hasattr(self.charlie_agent, 'wallet') else "0xCharlie"
         original_inputs = {
-            "item_type": "winter_jacket",
-            "color": "green",
-            "budget": 150.0,
-            "premium_tolerance": 0.20
+            "borrower_address": charlie_address,
+            "loan_amount": 0.5,
+            "erc8004_score": 0.78,
+            "payment_history_count": 8,
+            "stake_amount": 0.25,
+            "previous_defaults": 0
         }
         
-        validation_score, validation_result = self._perform_validation_with_0g_compute(
+        validation_score, validation_result = self._perform_validation_with_eigencompute(
             analysis_data, 
             alice_exec_hash=exec_hash,
             original_inputs=original_inputs
@@ -450,11 +453,11 @@ class GenesisStudioX402Orchestrator:
                     self.compute_provider_name = "0G Compute"
                 else:
                     rprint("[yellow]⚠️  0G Compute gRPC service not available[/yellow]")
-                    
+                
             except Exception as e:
-                rprint(f"[yellow]⚠️  0G Compute not available: {e}[/yellow]")
-                rprint("[yellow]   Will use CrewAI fallback for compute[/yellow]")
-                self.zg_compute = None
+                    rprint(f"[yellow]⚠️  0G Compute not available: {e}[/yellow]")
+                    rprint("[yellow]   Will use CrewAI fallback for compute[/yellow]")
+                    self.zg_compute = None
         
         # Display active compute provider
         rprint(f"[bold green]🔧 Active Compute Provider: {compute_provider.upper()}[/bold green]")
@@ -581,24 +584,24 @@ class GenesisStudioX402Orchestrator:
         }
     
     def _create_ap2_intent_mandate(self) -> Dict[str, Any]:
-        """Create AP2 intent mandate for market analysis service"""
+        """Create AP2 intent mandate for micro-loan evaluation service"""
         
-        # Create intent mandate using Alice's AP2 manager - Smart Shopping Scenario
+        # Create intent mandate using Alice's AP2 manager - Micro-Loan Scenario
         intent_mandate = self.alice_sdk.create_intent_mandate(
-            user_description="Find me the best winter jacket in green, willing to pay up to 20% premium for the right color. Price limit: $150, quality threshold: good, auto-purchase enabled",
-            merchants=None,  # Allow any merchant
-            skus=None,  # Allow any SKU
-            requires_refundability=True,  # Require refundable items
+            user_description="I need a 0.5 USDC micro-loan for operational expenses. I have 0.78 ERC-8004 reputation score, 8 successful payment history, and can stake 0.25 USDC (50% collateral). No previous defaults. Requesting autonomous loan evaluation and approval.",
+            merchants=None,  # Allow any lender
+            skus=None,  # Allow any loan product
+            requires_refundability=False,  # Loans are not refundable
             expiry_minutes=60
         )
         
         # Create cart mandate
         cart_mandate = self.alice_sdk.create_cart_mandate(
-            cart_id="cart_winter_jacket_001",
-            items=[{"service": "smart_shopping_agent", "description": "Find best winter jacket deal with color preference", "price": 2.0}],
-            total_amount=2.0,
-            currency="USDC",
-            merchant_name="Alice Smart Shopping Agent",
+            cart_id="cart_loan_request_001",
+            items=[{"service": "loan_evaluation_agent", "description": "Autonomous micro-loan creditworthiness evaluation with TEE verification", "price": 0.001}],
+            total_amount=0.001,
+            currency="A0GI",
+            merchant_name="Alice Loan Officer Agent",
             expiry_minutes=15
         )
         
@@ -627,8 +630,8 @@ class GenesisStudioX402Orchestrator:
             "intent_mandate": intent_mandate,
             "cart_mandate": cart_mandate,
             "verified": mandate_verified,
-            "intent_description": "Smart shopping for winter jacket with green color preference",
-            "cart_id": "cart_winter_jacket_001",
+            "intent_description": "Micro-loan request: 0.5 USDC with 0.25 USDC collateral, autonomous creditworthiness evaluation",
+            "cart_id": "cart_loan_request_001",
             "jwt_verified": mandate_verified
         }
         
@@ -648,14 +651,25 @@ class GenesisStudioX402Orchestrator:
         
         if intent_id:
             rprint(f"[cyan]🔗 Linking to AP2 Intent ID: {intent_id}[/cyan]")
-        rprint(f"[yellow]🤖 Alice performing smart shopping using {os.getenv('COMPUTE_PROVIDER', 'CrewAI').upper()} (TEE-verified)...[/yellow]")
+        rprint(f"[yellow]🏦 Alice evaluating loan request using {os.getenv('COMPUTE_PROVIDER', 'CrewAI').upper()} (TEE-verified)...[/yellow]")
+        
+        # Charlie's loan request (using Charlie's wallet address)
+        charlie_address = self.charlie_agent.wallet.address if hasattr(self.charlie_agent, 'wallet') else "0xCharlie"
+        
+        rprint(f"[cyan]📋 Loan Request:[/cyan]")
+        rprint(f"   Borrower: {charlie_address}")
+        rprint(f"   Amount: 0.5 USDC")
+        rprint(f"   Purpose: operational_expenses")
+        rprint()
         
         # Use agent SDK which handles provider routing (EigenAI, 0G, or CrewAI)
-        analysis_result = self.alice_agent.generate_smart_shopping_analysis(
-            item_type="winter_jacket",
-            color="green", 
-            budget=150.0,
-            premium_tolerance=0.20,
+        analysis_result = self.alice_agent.generate_loan_evaluation(
+            borrower_address=charlie_address,
+            loan_amount=0.5,
+            erc8004_score=0.78,
+            payment_history_count=8,
+            stake_amount=0.25,
+            previous_defaults=0,
             intent_id=intent_id  # Link to AP2 intent
         )
         
@@ -907,7 +921,7 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
         if tx_hash and tx_hash != "N/A":
             if not tx_hash.startswith('0x'):
                 tx_hash = f"0x{tx_hash}"
-            rprint(f"   Explorer: https://chainscan-galileo.0g.ai/tx/{tx_hash}")
+        rprint(f"   Explorer: https://chainscan-galileo.0g.ai/tx/{tx_hash}")
         rprint(f"   Service: Smart Shopping Service")
         rprint(f"   Network: 0G Galileo Testnet")
         
@@ -1019,14 +1033,14 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
         
         return tx_hash
     
-    def _perform_validation_with_0g_compute(self, analysis_data: Dict[str, Any], alice_exec_hash: Optional[str] = None, 
+    def _perform_validation_with_eigencompute(self, analysis_data: Dict[str, Any], alice_exec_hash: Optional[str] = None, 
                                            original_inputs: Optional[Dict[str, Any]] = None) -> tuple[int, Dict[str, Any]]:
-        """Bob performs validation by RE-EXECUTING Alice's exact analysis for deterministic verification
+        """Bob performs validation by RE-EXECUTING Alice's exact loan evaluation for deterministic verification
         
         Args:
-            analysis_data: Alice's analysis data (for reference)
+            analysis_data: Alice's loan evaluation data (for reference)
             alice_exec_hash: Alice's execution hash for deterministic comparison
-            original_inputs: Original inputs Alice used (item_type, color, budget, etc.)
+            original_inputs: Original inputs Alice used (borrower_address, loan_amount, erc8004_score, etc.)
         """
         import os
         import json
@@ -1036,22 +1050,24 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
         
         # ✅ DETERMINISTIC RE-RUN: Bob executes the SAME analysis with SAME inputs
         if original_inputs and self.compute_provider_name == "eigencompute" and hasattr(self.bob_agent, 'eigencompute'):
-            rprint(f"[cyan]🔄 Bob re-executing Alice's analysis with identical inputs for deterministic verification...[/cyan]")
-            rprint(f"[cyan]   Item: {original_inputs.get('item_type')}[/cyan]")
-            rprint(f"[cyan]   Color: {original_inputs.get('color')}[/cyan]")
-            rprint(f"[cyan]   Budget: ${original_inputs.get('budget')}[/cyan]")
+            rprint(f"[cyan]🔄 Bob re-executing Alice's loan evaluation with identical inputs for deterministic verification...[/cyan]")
+            rprint(f"[cyan]   Borrower: {original_inputs.get('borrower_address', 'N/A')[:10]}...[/cyan]")
+            rprint(f"[cyan]   Loan Amount: ${original_inputs.get('loan_amount', 0.5)} USDC[/cyan]")
+            rprint(f"[cyan]   ERC-8004 Score: {original_inputs.get('erc8004_score', 0.78)}[/cyan]")
             
             # Bob calls Alice's function in the TEE with the EXACT same inputs
             app_id = os.getenv("EIGENCOMPUTE_APP_ID")
             
             result = self.bob_agent.eigencompute.execute(
                 app_id=app_id,
-                function="analyze_shopping",  # Same function Alice used
+                function="evaluate_loan",  # Same function Alice used
                 inputs={
-                    "item_type": original_inputs.get('item_type', 'winter_jacket'),
-                    "color": original_inputs.get('color', 'green'),
-                    "budget": original_inputs.get('budget', 150.0),
-                    "premium_tolerance": original_inputs.get('premium_tolerance', 0.20)
+                    "borrower_address": original_inputs.get('borrower_address', '0xCharlie'),
+                    "loan_amount": original_inputs.get('loan_amount', 0.5),
+                    "erc8004_score": original_inputs.get('erc8004_score', 0.78),
+                    "payment_history_count": original_inputs.get('payment_history_count', 8),
+                    "stake_amount": original_inputs.get('stake_amount', 0.25),
+                    "previous_defaults": original_inputs.get('previous_defaults', 0)
                 }
             )
             
@@ -1060,8 +1076,9 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
             if isinstance(bob_output, str):
                 bob_output = json.loads(bob_output)
             
-            # Calculate Bob's exec_hash from his re-run (deterministic)
-            execution_data = json.dumps(bob_output, sort_keys=True).encode()
+            # Calculate Bob's exec_hash from his re-run (EXCLUDE tee_execution for determinism)
+            bob_core = {k: v for k, v in bob_output.items() if k != 'tee_execution'}
+            execution_data = json.dumps(bob_core, sort_keys=True).encode()
             bob_exec_hash = hashlib.sha256(execution_data).hexdigest()
             
             rprint(f"[cyan]✅ Bob completed re-execution in TEE[/cyan]")
@@ -1112,26 +1129,25 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
             proof = validation_result_raw["process_integrity_proof"]
             if hasattr(proof, 'tee_signature'):
                 rprint(f"[cyan]   TEE Signature: {proof.tee_signature[:32]}...[/cyan]")
-        
-        # Display Bob's validation
-        rprint("[bold]🔍 Bob's Validation:[/bold]")
-        
-        # Parse validation score
-        try:
-            import json
-            validation_data = validation_result_raw.get("validation", {})
-            score = validation_data.get("overall_score", 75)
             
-            # Display the validation scores (matching Bob's TEE output fields)
-            rprint(f"   Overall Score: {validation_data.get('overall_score', 0)}/100")
-            rprint(f"   Price Accuracy: {validation_data.get('price_accuracy', 0)}/100")
-            rprint(f"   Merchant Reliability: {validation_data.get('merchant_reliability', 0)}/100")
-            rprint(f"   Color Match Quality: {validation_data.get('color_match_quality', 0)}/100")
-            rprint(f"   Quality Rating: {validation_data.get('quality_rating', 'N/A')}")
-            rprint(f"   Pass/Fail: {validation_data.get('pass_fail', 'N/A')}")
-        except Exception as e:
-            rprint(f"[yellow]   Using default score: 75[/yellow]")
-            score = 75  # Default score
+            # Display Bob's validation (loan evaluation re-run)
+            rprint("[bold]🔍 Bob's Loan Evaluation Re-Run:[/bold]")
+            
+            # Parse validation score
+            try:
+                import json
+                validation_data = validation_result_raw.get("validation", {})
+                score = validation_data.get("overall_score", 75)
+            
+                # Display Bob's re-run results (should match Alice's if deterministic)
+                rprint(f"   Decision: {validation_data.get('decision', 'N/A')}")
+                rprint(f"   Risk Score: {validation_data.get('risk_score', 0)}/100")
+                rprint(f"   Creditworthiness: {validation_data.get('creditworthiness', 'N/A')}")
+                rprint(f"   Max Loan Amount: ${validation_data.get('max_loan_amount', 0)} USDC")
+                rprint(f"   Approval Confidence: {validation_data.get('approval_confidence', 0)}")
+            except Exception as e:
+                rprint(f"[yellow]   Using default score: 75[/yellow]")
+                score = 75  # Default score
             
             # Direct A0GI Payment for validation
             rprint(f"\n[cyan]💰 Direct A0GI Payment for validation:[/cyan]")
@@ -1834,15 +1850,15 @@ The complete lifecycle of trustless agentic commerce with Triple-Verified Stack:
 • Native integration with 0G Network ✅
 
 [bold magenta]💰 Economic Impact:[/bold magenta]
-• Alice earned {analysis_amount:.4f} A0GI for smart shopping service
-• Bob earned {validation_amount:.4f} A0GI for validation service
-• Charlie received verified shopping results with payment-backed guarantees
-• Complete audit trail for trustless commerce established
+• Alice earned {analysis_amount:.4f} A0GI for loan evaluation service
+• Bob earned {validation_amount:.4f} A0GI for audit service
+• Charlie received autonomous loan decision with TEE-verified creditworthiness evaluation
+• Complete audit trail for trustless autonomous lending established
 • All transactions in 0G native tokens (A0GI)
 
 [bold red]🔧 Next Steps:[/bold red]
 • Enhanced evidence packages with payment proofs
-• Multi-agent collaboration workflows
+• Multi-agent autonomous lending workflows
 • Cross-chain x402 payment support with 0G Bridge"""
 
         # Create and display the panel
