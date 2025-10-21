@@ -455,9 +455,9 @@ class GenesisStudioX402Orchestrator:
                     rprint("[yellow]⚠️  0G Compute gRPC service not available[/yellow]")
                 
             except Exception as e:
-                    rprint(f"[yellow]⚠️  0G Compute not available: {e}[/yellow]")
-                    rprint("[yellow]   Will use CrewAI fallback for compute[/yellow]")
-                    self.zg_compute = None
+                rprint(f"[yellow]⚠️  0G Compute not available: {e}[/yellow]")
+                rprint("[yellow]   Will use CrewAI fallback for compute[/yellow]")
+                self.zg_compute = None
         
         # Display active compute provider
         rprint(f"[bold green]🔧 Active Compute Provider: {compute_provider.upper()}[/bold green]")
