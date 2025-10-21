@@ -1122,11 +1122,13 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
             validation_data = validation_result_raw.get("validation", {})
             score = validation_data.get("overall_score", 75)
             
-            # Display the validation scores
+            # Display the validation scores (matching Bob's TEE output fields)
             rprint(f"   Overall Score: {validation_data.get('overall_score', 0)}/100")
-            rprint(f"   Completeness: {validation_data.get('completeness_score', 0)}/100")
-            rprint(f"   Accuracy: {validation_data.get('accuracy_score', 0)}/100")
-            rprint(f"   Value: {validation_data.get('value_score', 0)}/100")
+            rprint(f"   Price Accuracy: {validation_data.get('price_accuracy', 0)}/100")
+            rprint(f"   Merchant Reliability: {validation_data.get('merchant_reliability', 0)}/100")
+            rprint(f"   Color Match Quality: {validation_data.get('color_match_quality', 0)}/100")
+            rprint(f"   Quality Rating: {validation_data.get('quality_rating', 'N/A')}")
+            rprint(f"   Pass/Fail: {validation_data.get('pass_fail', 'N/A')}")
         except Exception as e:
             rprint(f"[yellow]   Using default score: 75[/yellow]")
             score = 75  # Default score
