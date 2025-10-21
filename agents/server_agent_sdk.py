@@ -413,7 +413,7 @@ class GenesisServerAgentSDK:
         enclave_wallet = result.proof.enclave_pubkey if hasattr(result.proof, 'enclave_pubkey') and result.proof.enclave_pubkey else "0x05d39048EDB42183ABaf609f4D5eda3A2a2eDcA3"
         
         rprint(f"[blue]   Docker Digest: {docker_digest}[/blue]")
-        rprint(f"   Enclave Wallet: {enclave_wallet}[/blue]")
+        rprint(f"[blue]   Enclave Wallet: {enclave_wallet}[/blue]")
         
         # Display EigenAI details (from TEE execution)
         if isinstance(evaluation_data, dict) and "tee_execution" in evaluation_data:
