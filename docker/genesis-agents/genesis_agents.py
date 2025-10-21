@@ -77,39 +77,39 @@ def alice_evaluate_loan(
     
     Inputs:
     - borrower_address: ERC-8004 identity
-    - loan_amount: Requested loan in A0GI
+    - loan_amount: Requested loan in USDC
     - erc8004_score: Reputation score (0.0-1.0)
     - payment_history_count: Number of successful past payments
-    - stake_amount: Amount staked by borrower
+    - stake_amount: Amount staked by borrower in USDC
     - previous_defaults: Number of past defaults
     
     Returns:
     - risk_score: 0-100 (lower is better)
     - decision: APPROVE/REJECT
-    - max_loan_amount: Maximum approved amount
+    - max_loan_amount: Maximum approved amount in USDC
     - reasoning: Explanation
     """
     
     prompt = f"""Evaluate this micro-loan request:
 
 Borrower: {borrower_address}
-Requested Amount: ${loan_amount} A0GI
+Requested Amount: ${loan_amount} USDC
 ERC-8004 Reputation Score: {erc8004_score} (0.0-1.0 scale)
 Payment History: {payment_history_count} successful payments
-Stake Amount: ${stake_amount} A0GI
+Stake Amount: ${stake_amount} USDC
 Previous Defaults: {previous_defaults}
 
 Evaluation Criteria:
 1. Reputation Score: Must be > 0.65 for approval
 2. Payment History: More history = lower risk
-3. Stake: Higher stake = more skin in the game
+3. Stake: Higher stake = more skin in the game (ideally 50%+ of loan)
 4. Defaults: Any defaults increase risk significantly
 
 Provide JSON evaluation with:
 {{
   "risk_score": <0-100, lower is better>,
   "decision": "APPROVE|REJECT",
-  "max_loan_amount": <approved amount in A0GI>,
+  "max_loan_amount": <approved amount in USDC>,
   "creditworthiness": "excellent|good|fair|poor",
   "approval_confidence": <0.0-1.0>,
   "key_factors": ["<factor1>", "<factor2>", "<factor3>"],
@@ -270,72 +270,44 @@ Provide JSON audit with:
 # CHARLIE - BORROWER AGENT
 # ============================================================================
 
-def charlie_request_loan(loan_amount: float, purpose: str) -> dict:
+def charlie_request_loan(loan_amount: float, purpose: str, borrower_address: str = None) -> dict:
     """
-    Charlie submits a loan request
+    Charlie submits a loan request with predefined background data
     
-    In a real system, Charlie would:
-    - Provide proof of identity (ERC-8004)
-    - Submit collateral/stake
-    - Explain loan purpose
+    Charlie is a registered agent on 0G network with:
+    - ERC-8004 identity: 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
+    - Good reputation score: 0.78
+    - Solid payment history: 8 successful payments
+    - Reasonable stake: 0.25 USDC (50% of requested loan)
+    - Clean record: 0 defaults
     """
     
-    prompt = f"""Generate a loan request profile:
-
-Requested Amount: ${loan_amount} A0GI
-Purpose: {purpose}
-
-Create a realistic borrower profile with:
-{{
-  "borrower_address": "0x...",
-  "erc8004_score": <0.0-1.0>,
-  "payment_history_count": <number>,
-  "stake_amount": <amount in A0GI>,
-  "previous_defaults": <number>,
-  "loan_purpose": "{purpose}",
-  "employment_status": "employed|self-employed|student",
-  "monthly_income_estimate": <amount>,
-  "existing_debt": <amount>,
-  "reputation_tier": "platinum|gold|silver|bronze"
-}}
-
-Make it realistic and varied."""
-
-    eigenai_response = call_eigenai(prompt, seed=42)
-    content = eigenai_response["choices"][0]["message"]["content"]
+    # Charlie's predefined background (consistent for deterministic testing)
+    profile = {
+        "borrower_address": borrower_address or "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+        "borrower_name": "Charlie (Borrower Agent)",
+        "erc8004_score": 0.78,  # Good reputation
+        "payment_history_count": 8,  # 8 successful past payments
+        "stake_amount": 0.25,  # 0.25 USDC stake (50% of loan)
+        "previous_defaults": 0,  # Clean record
+        "loan_purpose": purpose,
+        "employment_status": "self-employed",
+        "monthly_income_estimate": 5000,  # $5k/month
+        "existing_debt": 0,  # No existing debt
+        "reputation_tier": "gold",
+        "requested_amount": loan_amount,
+        "requested_currency": "USDC",
+        "request_timestamp": datetime.now().isoformat(),
+        "background_notes": "Registered agent on 0G network, consistent payment history, seeking micro-loan for operational expenses"
+    }
     
-    # Parse JSON
-    try:
-        profile = json.loads(content)
-    except json.JSONDecodeError:
-        if "```json" in content:
-            start = content.find("```json") + 7
-            end = content.find("```", start)
-            content = content[start:end].strip()
-            profile = json.loads(content)
-        else:
-            # Fallback profile
-            profile = {
-                "borrower_address": "0xCharlie123...",
-                "erc8004_score": 0.75,
-                "payment_history_count": 5,
-                "stake_amount": loan_amount * 0.3,
-                "previous_defaults": 0,
-                "loan_purpose": purpose
-            }
-    
-    # Add request metadata
-    profile["requested_amount"] = loan_amount
-    profile["request_timestamp"] = datetime.now().isoformat()
-    
-    # Add TEE metadata
+    # Add TEE metadata (no EigenAI call needed for predefined data)
     profile["tee_execution"] = {
         "agent": "Charlie",
         "role": "Borrower",
         "timestamp": datetime.now().isoformat(),
-        "eigenai_job_id": eigenai_response["id"],
-        "eigenai_model": eigenai_response["model"],
-        "function": "request_loan"
+        "function": "request_loan",
+        "data_source": "predefined_profile"
     }
     
     return profile
@@ -397,8 +369,9 @@ def charlie_endpoint():
     try:
         data = request.get_json()
         result = charlie_request_loan(
-            loan_amount=float(data.get('loan_amount', 50)),
-            purpose=data.get('purpose', 'business_expansion')
+            loan_amount=float(data.get('loan_amount', 0.5)),
+            purpose=data.get('purpose', 'operational_expenses'),
+            borrower_address=data.get('borrower_address')
         )
         return jsonify(result)
     except Exception as e:
