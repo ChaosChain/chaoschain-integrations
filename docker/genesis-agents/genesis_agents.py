@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Genesis Multi-Agent TEE Application
-Combines Alice, Bob, and Charlie in a single EigenCompute deployment
+Genesis Multi-Agent TEE Application - Micro-Loan Approval System
+Alice: Loan Officer (evaluates creditworthiness)
+Bob: Auditor (re-verifies Alice's evaluation)
+Charlie: Borrower (requests loan)
 """
 
 import json
@@ -36,7 +38,7 @@ def call_eigenai(prompt: str, seed: int = 42) -> dict:
         "messages": [
             {
                 "role": "system",
-                "content": "You are an expert AI assistant. Provide analysis in JSON format only."
+                "content": "You are an expert financial analyst. Provide analysis in JSON format only."
             },
             {
                 "role": "user",
@@ -59,102 +61,170 @@ def call_eigenai(prompt: str, seed: int = 42) -> dict:
 
 
 # ============================================================================
-# ALICE - SHOPPING AGENT
+# ALICE - LOAN OFFICER AGENT
 # ============================================================================
 
-def alice_analyze_shopping(item_type: str, color: str, budget: float, premium_tolerance: float) -> dict:
-    """Alice's shopping analysis with EigenAI"""
+def alice_evaluate_loan(
+    borrower_address: str,
+    loan_amount: float,
+    erc8004_score: float,
+    payment_history_count: int,
+    stake_amount: float,
+    previous_defaults: int
+) -> dict:
+    """
+    Alice evaluates loan request using on-chain metrics
     
-    prompt = f"""Analyze this shopping request:
+    Inputs:
+    - borrower_address: ERC-8004 identity
+    - loan_amount: Requested loan in A0GI
+    - erc8004_score: Reputation score (0.0-1.0)
+    - payment_history_count: Number of successful past payments
+    - stake_amount: Amount staked by borrower
+    - previous_defaults: Number of past defaults
+    
+    Returns:
+    - risk_score: 0-100 (lower is better)
+    - decision: APPROVE/REJECT
+    - max_loan_amount: Maximum approved amount
+    - reasoning: Explanation
+    """
+    
+    prompt = f"""Evaluate this micro-loan request:
 
-Product: {item_type}
-Preferred Color: {color}
-Budget: ${budget}
-Premium Tolerance: {premium_tolerance*100}%
+Borrower: {borrower_address}
+Requested Amount: ${loan_amount} A0GI
+ERC-8004 Reputation Score: {erc8004_score} (0.0-1.0 scale)
+Payment History: {payment_history_count} successful payments
+Stake Amount: ${stake_amount} A0GI
+Previous Defaults: {previous_defaults}
 
-Provide JSON response with:
+Evaluation Criteria:
+1. Reputation Score: Must be > 0.65 for approval
+2. Payment History: More history = lower risk
+3. Stake: Higher stake = more skin in the game
+4. Defaults: Any defaults increase risk significantly
+
+Provide JSON evaluation with:
 {{
-  "item_type": "{item_type}",
-  "requested_color": "{color}",
-  "available_color": "<color>",
-  "base_price": <price>,
-  "final_price": <price>,
-  "premium_applied": <percent>,
-  "deal_quality": "excellent|good|alternative",
-  "color_match_found": true|false,
-  "merchant": "<name>",
-  "availability": "in_stock",
-  "estimated_delivery": "<days>",
-  "confidence": <0.0-1.0>,
-  "reasoning": "<explanation>"
+  "risk_score": <0-100, lower is better>,
+  "decision": "APPROVE|REJECT",
+  "max_loan_amount": <approved amount in A0GI>,
+  "creditworthiness": "excellent|good|fair|poor",
+  "approval_confidence": <0.0-1.0>,
+  "key_factors": ["<factor1>", "<factor2>", "<factor3>"],
+  "reasoning": "<detailed explanation>",
+  "recommended_interest_rate": <percentage>,
+  "repayment_period_days": <days>
 }}
 
-Keep prices within budget."""
+Be conservative but fair. Consider all factors holistically."""
 
     eigenai_response = call_eigenai(prompt, seed=42)
     content = eigenai_response["choices"][0]["message"]["content"]
     
     # Parse JSON
     try:
-        analysis = json.loads(content)
+        evaluation = json.loads(content)
     except json.JSONDecodeError:
         if "```json" in content:
             start = content.find("```json") + 7
             end = content.find("```", start)
             content = content[start:end].strip()
-            analysis = json.loads(content)
+            evaluation = json.loads(content)
         else:
-            analysis = {
-                "item_type": item_type,
-                "requested_color": color,
-                "available_color": color,
-                "final_price": budget * 0.85,
-                "confidence": 0.85,
-                "reasoning": content[:200]
+            # Fallback: Conservative rejection
+            evaluation = {
+                "risk_score": 85,
+                "decision": "REJECT",
+                "max_loan_amount": 0,
+                "creditworthiness": "poor",
+                "approval_confidence": 0.3,
+                "reasoning": "Unable to parse evaluation, defaulting to rejection for safety"
             }
     
+    # Add input data for deterministic verification
+    evaluation["inputs"] = {
+        "borrower_address": borrower_address,
+        "loan_amount": loan_amount,
+        "erc8004_score": erc8004_score,
+        "payment_history_count": payment_history_count,
+        "stake_amount": stake_amount,
+        "previous_defaults": previous_defaults
+    }
+    
     # Add TEE metadata
-    analysis["tee_execution"] = {
+    evaluation["tee_execution"] = {
         "agent": "Alice",
+        "role": "Loan Officer",
         "timestamp": datetime.now().isoformat(),
         "eigenai_job_id": eigenai_response["id"],
         "eigenai_model": eigenai_response["model"],
-        "function": "analyze_shopping"
+        "function": "evaluate_loan"
     }
     
-    return analysis
+    return evaluation
 
 
 # ============================================================================
-# BOB - VALIDATOR AGENT
+# BOB - AUDITOR AGENT
 # ============================================================================
 
-def bob_validate_analysis(analysis: dict) -> dict:
-    """Bob's validation with EigenAI"""
+def bob_audit_loan_evaluation(evaluation: dict) -> dict:
+    """
+    Bob re-verifies Alice's loan evaluation
     
-    analysis_summary = json.dumps({
-        "item": analysis.get("item_type"),
-        "price": analysis.get("final_price"),
-        "merchant": analysis.get("merchant"),
-        "color_match": analysis.get("color_match_found"),
-        "confidence": analysis.get("confidence")
+    For deterministic verification, Bob can:
+    1. Re-run Alice's exact evaluation with same inputs (exec_hash comparison)
+    2. Audit the decision logic independently
+    
+    This endpoint does option #2: Independent audit
+    """
+    
+    # Extract Alice's evaluation
+    decision = evaluation.get("decision", "UNKNOWN")
+    risk_score = evaluation.get("risk_score", 100)
+    inputs = evaluation.get("inputs", {})
+    
+    evaluation_summary = json.dumps({
+        "decision": decision,
+        "risk_score": risk_score,
+        "borrower": inputs.get("borrower_address", "unknown"),
+        "loan_amount": inputs.get("loan_amount", 0),
+        "erc8004_score": inputs.get("erc8004_score", 0),
+        "payment_history": inputs.get("payment_history_count", 0),
+        "stake": inputs.get("stake_amount", 0),
+        "defaults": inputs.get("previous_defaults", 0)
     })
     
-    prompt = f"""Validate this shopping analysis:
+    prompt = f"""Audit this loan evaluation decision:
 
-Analysis: {analysis_summary}
+Alice's Evaluation: {evaluation_summary}
 
-Provide JSON validation with:
+Audit Criteria:
+1. Risk Assessment: Is the risk_score reasonable given the metrics?
+2. Decision Logic: Does APPROVE/REJECT align with the risk_score?
+3. Consistency: Are similar borrowers treated similarly?
+4. Safety: Is the decision conservative enough to protect lender?
+
+Standard Rules:
+- ERC-8004 score < 0.65 → Should be REJECT
+- Previous defaults > 0 → Risk score should be > 60
+- Stake < 50% of loan → Higher risk
+- Payment history < 3 → Should be cautious
+
+Provide JSON audit with:
 {{
-  "overall_score": <0-100>,
-  "price_accuracy": <0-100>,
-  "merchant_reliability": <0-100>,
-  "color_match_quality": <0-100>,
-  "quality_rating": "excellent|good|fair|poor",
-  "pass_fail": "PASS|FAIL",
-  "confidence_assessment": "<assessment>",
-  "recommendations": ["<rec1>", "<rec2>"],
-  "validation_notes": "<notes>"
+  "audit_decision": "APPROVE|REJECT",
+  "agrees_with_alice": true|false,
+  "audit_risk_score": <0-100>,
+  "risk_score_difference": <difference from Alice's score>,
+  "decision_quality": "excellent|good|questionable|poor",
+  "compliance_check": "PASS|FAIL",
+  "red_flags": ["<flag1>", "<flag2>"],
+  "audit_confidence": <0.0-1.0>,
+  "audit_notes": "<detailed notes>",
+  "recommendation": "APPROVE|REJECT|REVIEW"
 }}"""
 
     eigenai_response = call_eigenai(prompt, seed=42)
@@ -162,88 +232,113 @@ Provide JSON validation with:
     
     # Parse JSON
     try:
-        validation = json.loads(content)
+        audit = json.loads(content)
     except json.JSONDecodeError:
         if "```json" in content:
             start = content.find("```json") + 7
             end = content.find("```", start)
             content = content[start:end].strip()
-            validation = json.loads(content)
+            audit = json.loads(content)
         else:
-            validation = {
-                "overall_score": 85,
-                "quality_rating": "good",
-                "pass_fail": "PASS",
-                "validation_notes": content[:200]
+            # Fallback: Conservative audit
+            audit = {
+                "audit_decision": "REJECT",
+                "agrees_with_alice": False,
+                "audit_risk_score": 90,
+                "decision_quality": "questionable",
+                "compliance_check": "FAIL",
+                "audit_notes": "Unable to parse audit, defaulting to rejection"
             }
     
+    # Add original evaluation for reference
+    audit["alice_evaluation"] = evaluation
+    
     # Add TEE metadata
-    validation["tee_execution"] = {
+    audit["tee_execution"] = {
         "agent": "Bob",
+        "role": "Auditor",
         "timestamp": datetime.now().isoformat(),
         "eigenai_job_id": eigenai_response["id"],
         "eigenai_model": eigenai_response["model"],
-        "function": "validate_analysis"
+        "function": "audit_loan_evaluation"
     }
     
-    return validation
+    return audit
 
 
 # ============================================================================
-# CHARLIE - MARKET ANALYST
+# CHARLIE - BORROWER AGENT
 # ============================================================================
 
-def charlie_market_analysis(item_type: str, price: float) -> dict:
-    """Charlie's market analysis with EigenAI"""
+def charlie_request_loan(loan_amount: float, purpose: str) -> dict:
+    """
+    Charlie submits a loan request
     
-    prompt = f"""Analyze market trends for this product:
+    In a real system, Charlie would:
+    - Provide proof of identity (ERC-8004)
+    - Submit collateral/stake
+    - Explain loan purpose
+    """
+    
+    prompt = f"""Generate a loan request profile:
 
-Product: {item_type}
-Current Price: ${price}
+Requested Amount: ${loan_amount} A0GI
+Purpose: {purpose}
 
-Provide JSON market analysis with:
+Create a realistic borrower profile with:
 {{
-  "market_average": <price>,
-  "price_trend": "rising|stable|falling",
-  "value_rating": "excellent|good|fair|poor",
-  "market_position": "below|at|above",
-  "competitor_prices": [<p1>, <p2>, <p3>],
-  "seasonal_factor": "<factor>",
-  "recommendation": "<buy_now|wait|negotiate>",
-  "confidence": <0.0-1.0>,
-  "analysis_notes": "<notes>"
-}}"""
+  "borrower_address": "0x...",
+  "erc8004_score": <0.0-1.0>,
+  "payment_history_count": <number>,
+  "stake_amount": <amount in A0GI>,
+  "previous_defaults": <number>,
+  "loan_purpose": "{purpose}",
+  "employment_status": "employed|self-employed|student",
+  "monthly_income_estimate": <amount>,
+  "existing_debt": <amount>,
+  "reputation_tier": "platinum|gold|silver|bronze"
+}}
+
+Make it realistic and varied."""
 
     eigenai_response = call_eigenai(prompt, seed=42)
     content = eigenai_response["choices"][0]["message"]["content"]
     
     # Parse JSON
     try:
-        analysis = json.loads(content)
+        profile = json.loads(content)
     except json.JSONDecodeError:
         if "```json" in content:
             start = content.find("```json") + 7
             end = content.find("```", start)
             content = content[start:end].strip()
-            analysis = json.loads(content)
+            profile = json.loads(content)
         else:
-            analysis = {
-                "market_average": price * 1.1,
-                "value_rating": "good",
-                "recommendation": "buy_now",
-                "confidence": 0.80
+            # Fallback profile
+            profile = {
+                "borrower_address": "0xCharlie123...",
+                "erc8004_score": 0.75,
+                "payment_history_count": 5,
+                "stake_amount": loan_amount * 0.3,
+                "previous_defaults": 0,
+                "loan_purpose": purpose
             }
     
+    # Add request metadata
+    profile["requested_amount"] = loan_amount
+    profile["request_timestamp"] = datetime.now().isoformat()
+    
     # Add TEE metadata
-    analysis["tee_execution"] = {
+    profile["tee_execution"] = {
         "agent": "Charlie",
+        "role": "Borrower",
         "timestamp": datetime.now().isoformat(),
         "eigenai_job_id": eigenai_response["id"],
         "eigenai_model": eigenai_response["model"],
-        "function": "market_analysis"
+        "function": "request_loan"
     }
     
-    return analysis
+    return profile
 
 
 # ============================================================================
@@ -255,52 +350,55 @@ def health():
     """Health check for all agents"""
     return jsonify({
         "status": "healthy",
-        "service": "genesis-multi-agent",
-        "version": "1.0.0",
+        "service": "genesis-loan-approval-system",
+        "version": "2.0.0",
         "agents": {
-            "alice": "shopping-analyst",
-            "bob": "validator",
-            "charlie": "market-analyst"
-        }
+            "alice": "loan-officer",
+            "bob": "auditor",
+            "charlie": "borrower"
+        },
+        "use_case": "Micro-Loan Approval with Deterministic Verification"
     })
 
 
-@app.route('/alice/analyze_shopping', methods=['POST'])
+@app.route('/alice/evaluate_loan', methods=['POST'])
 def alice_endpoint():
-    """Alice's shopping analysis endpoint"""
+    """Alice's loan evaluation endpoint"""
     try:
         data = request.get_json()
-        result = alice_analyze_shopping(
-            item_type=data.get('item_type', 'laptop'),
-            color=data.get('color', 'silver'),
-            budget=float(data.get('budget', 1000)),
-            premium_tolerance=float(data.get('premium_tolerance', 0.20))
+        result = alice_evaluate_loan(
+            borrower_address=data.get('borrower_address', '0xUnknown'),
+            loan_amount=float(data.get('loan_amount', 50)),
+            erc8004_score=float(data.get('erc8004_score', 0.5)),
+            payment_history_count=int(data.get('payment_history_count', 0)),
+            stake_amount=float(data.get('stake_amount', 0)),
+            previous_defaults=int(data.get('previous_defaults', 0))
         )
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e), "agent": "Alice"}), 500
 
 
-@app.route('/bob/validate_analysis', methods=['POST'])
+@app.route('/bob/audit_evaluation', methods=['POST'])
 def bob_endpoint():
-    """Bob's validation endpoint"""
+    """Bob's audit endpoint"""
     try:
         data = request.get_json()
-        analysis = data.get('analysis', {})
-        result = bob_validate_analysis(analysis)
+        evaluation = data.get('evaluation', {})
+        result = bob_audit_loan_evaluation(evaluation)
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e), "agent": "Bob"}), 500
 
 
-@app.route('/charlie/market_analysis', methods=['POST'])
+@app.route('/charlie/request_loan', methods=['POST'])
 def charlie_endpoint():
-    """Charlie's market analysis endpoint"""
+    """Charlie's loan request endpoint"""
     try:
         data = request.get_json()
-        result = charlie_market_analysis(
-            item_type=data.get('item_type', 'laptop'),
-            price=float(data.get('price', 1000))
+        result = charlie_request_loan(
+            loan_amount=float(data.get('loan_amount', 50)),
+            purpose=data.get('purpose', 'business_expansion')
         )
         return jsonify(result)
     except Exception as e:
@@ -334,7 +432,7 @@ def alice_proof_endpoint(job_id):
         app_id = os.getenv("EIGENCOMPUTE_APP_ID", "unknown")
         
         # Docker digest for this deployment
-        docker_digest = "sha256:00a3561a5aaa83c696b222cad0d1d0564c33614024e04e2b054b4cacce767ae8"
+        docker_digest = "sha256:b4ec937960e6a0a5cf9b79ba18a524aac7c2c278597f7146c6fa19eb3842b9fb"
         enclave_wallet = os.getenv("ENCLAVE_WALLET", "0x05d39048EDB42183ABaf609f4D5eda3A2a2eDcA3")
         
         # TDX attestation claims (hardware-backed)
@@ -349,7 +447,8 @@ def alice_proof_endpoint(job_id):
         # Build ProcessProof
         process_proof = {
             "agent": "Alice",
-            "function": "analyze_shopping",
+            "role": "Loan Officer",
+            "function": "evaluate_loan",
             "job_id": job_id,
             "app_id": app_id,
             "enclave_wallet": enclave_wallet,
@@ -357,7 +456,7 @@ def alice_proof_endpoint(job_id):
             "code_hash": hashlib.sha256(docker_digest.encode()).hexdigest(),
             "tdx_claims": tdx_claims,
             "timestamp": datetime.now().isoformat(),
-            "version": "1.0.0"
+            "version": "2.0.0"
         }
         
         # TODO: Sign the proof with enclave private key
@@ -381,7 +480,7 @@ def bob_proof_endpoint(job_id):
         
         # Get app metadata
         app_id = os.getenv("EIGENCOMPUTE_APP_ID", "unknown")
-        docker_digest = "sha256:00a3561a5aaa83c696b222cad0d1d0564c33614024e04e2b054b4cacce767ae8"
+        docker_digest = "sha256:b4ec937960e6a0a5cf9b79ba18a524aac7c2c278597f7146c6fa19eb3842b9fb"
         enclave_wallet = os.getenv("ENCLAVE_WALLET", "0x05d39048EDB42183ABaf609f4D5eda3A2a2eDcA3")
         
         # TDX attestation claims
@@ -396,7 +495,8 @@ def bob_proof_endpoint(job_id):
         # Build ProcessProof for Bob
         process_proof = {
             "agent": "Bob",
-            "function": "validate_analysis",
+            "role": "Auditor",
+            "function": "audit_loan_evaluation",
             "job_id": job_id,
             "app_id": app_id,
             "enclave_wallet": enclave_wallet,
@@ -404,7 +504,7 @@ def bob_proof_endpoint(job_id):
             "code_hash": hashlib.sha256(docker_digest.encode()).hexdigest(),
             "tdx_claims": tdx_claims,
             "timestamp": datetime.now().isoformat(),
-            "version": "1.0.0"
+            "version": "2.0.0"
         }
         
         # Sign proof
@@ -425,11 +525,13 @@ def bob_proof_endpoint(job_id):
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
-    print(f"🚀 Starting Genesis Multi-Agent System on port {port}...")
-    print(f"   Agents: Alice (shopping), Bob (validation), Charlie (market)")
+    print(f"🚀 Starting Genesis Micro-Loan Approval System on port {port}...")
+    print(f"   Alice: Loan Officer (evaluates creditworthiness)")
+    print(f"   Bob: Auditor (verifies Alice's decisions)")
+    print(f"   Charlie: Borrower (requests loans)")
+    print(f"")
     print(f"   Health: http://0.0.0.0:{port}/health")
-    print(f"   Alice: http://0.0.0.0:{port}/alice/analyze_shopping")
-    print(f"   Bob: http://0.0.0.0:{port}/bob/validate_analysis")
-    print(f"   Charlie: http://0.0.0.0:{port}/charlie/market_analysis")
+    print(f"   Alice: http://0.0.0.0:{port}/alice/evaluate_loan")
+    print(f"   Bob: http://0.0.0.0:{port}/bob/audit_evaluation")
+    print(f"   Charlie: http://0.0.0.0:{port}/charlie/request_loan")
     app.run(host='0.0.0.0', port=port, debug=False)
-
