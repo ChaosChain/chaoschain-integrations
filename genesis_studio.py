@@ -360,11 +360,11 @@ class GenesisStudioX402Orchestrator:
         # Core required variables (network-specific)
         if network == "0g-testnet":
             required_vars = [
-                "NETWORK", "ZEROG_TESTNET_RPC_URL", "ZEROG_TESTNET_PRIVATE_KEY"
+                "NETWORK", "ZEROG_TESTNET_RPC_URL"
             ]
         elif network == "base-sepolia":
             required_vars = [
-                "NETWORK", "BASE_SEPOLIA_RPC_URL", "BASE_SEPOLIA_PRIVATE_KEY"
+                "NETWORK", "BASE_SEPOLIA_RPC_URL"
             ]
         else:
             required_vars = ["NETWORK"]
@@ -373,7 +373,8 @@ class GenesisStudioX402Orchestrator:
         optional_vars = [
             "PINATA_JWT", "PINATA_GATEWAY", 
             "CDP_API_KEY_ID", "CDP_API_KEY_SECRET", "CDP_WALLET_SECRET",
-            "USDC_CONTRACT_ADDRESS"
+            "USDC_CONTRACT_ADDRESS",
+            "X402_USE_FACILITATOR", "X402_FACILITATOR_URL"
         ]
         
         missing_vars = []
@@ -384,6 +385,20 @@ class GenesisStudioX402Orchestrator:
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
         
+        # Check x402 facilitator configuration
+        use_facilitator = os.getenv("X402_USE_FACILITATOR", "false").lower() == "true"
+        facilitator_url = os.getenv("X402_FACILITATOR_URL", "")
+        
+        if use_facilitator:
+            if facilitator_url:
+                rprint(f"[green]✅ x402 Facilitator enabled: {facilitator_url}[/green]")
+            else:
+                rprint(f"[yellow]⚠️  X402_USE_FACILITATOR=true but X402_FACILITATOR_URL not set[/yellow]")
+                rprint(f"[yellow]   Defaulting to direct settlement mode[/yellow]")
+        else:
+            rprint(f"[cyan]ℹ️  x402 Facilitator disabled (direct settlement mode)[/cyan]")
+            rprint(f"[cyan]   To enable: export X402_USE_FACILITATOR=true[/cyan]")
+        
         # Check optional variables and warn if missing
         missing_optional = []
         for var in optional_vars:
@@ -391,13 +406,13 @@ class GenesisStudioX402Orchestrator:
                 missing_optional.append(var)
         
         if missing_optional:
-            rprint(f"[yellow]⚠️  Optional variables not set: {', '.join(missing_optional)}[/yellow]")
-            rprint("[yellow]   Storage will use local IPFS fallback (free option)[/yellow]")
-            rprint("[yellow]   To enable Pinata: set PINATA_JWT and PINATA_GATEWAY[/yellow]")
+            rprint(f"[dim]Optional variables not set: {', '.join(missing_optional)}[/dim]")
         
-        # Validate network is set to 0g-testnet
-        if os.getenv("NETWORK") != "0g-testnet":
-            rprint("[yellow]⚠️  Network is not set to '0g-testnet'. This demo is designed for 0G Testnet.[/yellow]")
+        # Network-specific warnings
+        if network == "base-sepolia":
+            rprint(f"[cyan]ℹ️  Using Base Sepolia network (x402 supported)[/cyan]")
+        elif network == "0g-testnet":
+            rprint(f"[cyan]ℹ️  Using 0G Testnet network[/cyan]")
     
     def _initialize_agent_sdks(self):
         """Initialize CrewAI-powered agents with ChaosChain SDK integration"""
@@ -462,10 +477,18 @@ class GenesisStudioX402Orchestrator:
         # Display active compute provider
         rprint(f"[bold green]🔧 Active Compute Provider: {compute_provider.upper()}[/bold green]")
         
-        # Use 0G network for data layer (storage) - consistent with Triple-Verified Stack
-        # Compute can be EigenCompute (Layer 2) while using 0G for data (Layer 3)
-        network = NetworkConfig.ZEROG_TESTNET
-        rprint(f"[cyan]🌐 Network: 0G Testnet (for data layer storage)[/cyan]")
+        # Determine network from environment
+        network_name = os.getenv("NETWORK", "zerog-testnet")
+        if network_name == "base-sepolia":
+            network = NetworkConfig.BASE_SEPOLIA
+            rprint(f"[cyan]🌐 Network: Base Sepolia (x402 supported)[/cyan]")
+        elif network_name == "0g-testnet" or network_name == "zerog-testnet":
+            network = NetworkConfig.ZEROG_TESTNET
+            rprint(f"[cyan]🌐 Network: 0G Testnet (for data layer storage)[/cyan]")
+        else:
+            # Default to Base Sepolia for x402 testing
+            network = NetworkConfig.BASE_SEPOLIA
+            rprint(f"[yellow]⚠️  Unknown network '{network_name}', defaulting to Base Sepolia[/yellow]")
         
         rprint("[cyan]   Creating Alice agent...[/cyan]")
         self.alice_agent = GenesisServerAgentSDK(
@@ -527,31 +550,211 @@ class GenesisStudioX402Orchestrator:
             "Bob": self.bob_sdk.wallet_address,
             "Charlie": self.charlie_sdk.wallet_address
         }
+        
+        # Initialize paywall servers for Alice and Bob (x402 protocol)
+        self._setup_paywall_servers()
+    
+    def _setup_paywall_servers(self):
+        """Setup x402 paywall servers for Alice and Bob"""
+        import threading
+        import time
+        
+        rprint("\n[bold cyan]🏛️  Setting up x402 Paywall Servers...[/bold cyan]")
+        
+        # Check if we should enable paywall servers (only on Base Sepolia with facilitator)
+        network = os.getenv("NETWORK", "base-sepolia")
+        use_facilitator = os.getenv("X402_USE_FACILITATOR", "false").lower() == "true"
+        
+        if network != "base-sepolia" or not use_facilitator:
+            rprint(f"[yellow]⚠️  Paywall servers disabled (only for Base Sepolia + Facilitator)[/yellow]")
+            rprint(f"[yellow]   Current: network={network}, facilitator={use_facilitator}[/yellow]")
+            self.alice_paywall = None
+            self.bob_paywall = None
+            return
+        
+        try:
+            # Create Alice's paywall server (port 8403)
+            rprint("[cyan]   Creating Alice's paywall server (port 8403)...[/cyan]")
+            self.alice_paywall = self.alice_sdk.create_x402_paywall_server(port=8403)
+            
+            # Register Alice's loan evaluation service
+            @self.alice_paywall.require_payment(
+                amount=0.001,  # 0.001 USDC for loan evaluation
+                description="Loan Evaluation Service",
+                resource_path="/alice/evaluate_loan"
+            )
+            def evaluate_loan_service(data):
+                """Alice's loan evaluation service (requires payment)"""
+                rprint(f"[green]💰 Alice received payment for loan evaluation[/green]")
+                
+                # Extract loan request data
+                borrower_address = data.get('borrower_address', '0xCharlie')
+                loan_amount = data.get('loan_amount', 0.5)
+                erc8004_score = data.get('erc8004_score', 0.78)
+                payment_history_count = data.get('payment_history_count', 8)
+                stake_amount = data.get('stake_amount', 0.25)
+                previous_defaults = data.get('previous_defaults', 0)
+                
+                # Call Alice's actual evaluation logic
+                result = self.alice_agent.generate_loan_evaluation(
+                    borrower_address=borrower_address,
+                    loan_amount=loan_amount,
+                    erc8004_score=erc8004_score,
+                    payment_history_count=payment_history_count,
+                    stake_amount=stake_amount,
+                    previous_defaults=previous_defaults,
+                    intent_id=data.get('intent_id')
+                )
+                
+                return result
+            
+            rprint(f"[green]✅ Alice's paywall server configured on port 8403[/green]")
+            rprint(f"[dim]   Service: /alice/evaluate_loan (0.001 USDC)[/dim]")
+            
+            # Create Bob's paywall server (port 8404)
+            rprint("[cyan]   Creating Bob's paywall server (port 8404)...[/cyan]")
+            self.bob_paywall = self.bob_sdk.create_x402_paywall_server(port=8404)
+            
+            # Register Bob's audit service
+            @self.bob_paywall.require_payment(
+                amount=0.001,  # 0.001 USDC for audit
+                description="Loan Audit Service",
+                resource_path="/bob/audit_evaluation"
+            )
+            def audit_evaluation_service(data):
+                """Bob's audit service (requires payment)"""
+                rprint(f"[green]💰 Bob received payment for audit[/green]")
+                
+                # Extract audit data
+                original_inputs = data.get('original_inputs', {})
+                alice_result = data.get('alice_result', {})
+                
+                # Call Bob's actual audit logic
+                result = self.bob_agent.validate_loan_evaluation(
+                    original_inputs=original_inputs,
+                    alice_result=alice_result,
+                    app_id=os.getenv("EIGENCOMPUTE_APP_ID")
+                )
+                
+                return result
+            
+            rprint(f"[green]✅ Bob's paywall server configured on port 8404[/green]")
+            rprint(f"[dim]   Service: /bob/audit_evaluation (0.001 USDC)[/dim]")
+            
+            # Start servers in background threads
+            rprint("[cyan]   Starting paywall servers in background...[/cyan]")
+            
+            def run_alice_server():
+                try:
+                    self.alice_paywall.run(host="0.0.0.0", port=8403, debug=False)
+                except Exception as e:
+                    rprint(f"[red]❌ Alice's paywall server error: {e}[/red]")
+            
+            def run_bob_server():
+                try:
+                    self.bob_paywall.run(host="0.0.0.0", port=8404, debug=False)
+                except Exception as e:
+                    rprint(f"[red]❌ Bob's paywall server error: {e}[/red]")
+            
+            # Start servers in daemon threads
+            alice_thread = threading.Thread(target=run_alice_server, daemon=True)
+            bob_thread = threading.Thread(target=run_bob_server, daemon=True)
+            
+            alice_thread.start()
+            bob_thread.start()
+            
+            # Give servers time to start
+            time.sleep(2)
+            
+            rprint(f"[bold green]✅ Paywall servers running![/bold green]")
+            rprint(f"[cyan]   Alice: http://localhost:8403/alice/evaluate_loan[/cyan]")
+            rprint(f"[cyan]   Bob: http://localhost:8404/bob/audit_evaluation[/cyan]")
+            rprint(f"[dim]   Facilitator: {os.getenv('X402_FACILITATOR_URL')}[/dim]")
+            
+            # Test servers are responding
+            import requests
+            try:
+                # Test Alice's server (should return 402)
+                response = requests.get("http://localhost:8403/alice/evaluate_loan", timeout=2)
+                if response.status_code == 402:
+                    rprint(f"[green]✅ Alice's paywall responding with 402 Payment Required[/green]")
+                else:
+                    rprint(f"[yellow]⚠️  Alice's paywall returned {response.status_code}[/yellow]")
+            except Exception as e:
+                rprint(f"[yellow]⚠️  Could not test Alice's paywall: {e}[/yellow]")
+            
+            try:
+                # Test Bob's server (should return 402)
+                response = requests.get("http://localhost:8404/bob/audit_evaluation", timeout=2)
+                if response.status_code == 402:
+                    rprint(f"[green]✅ Bob's paywall responding with 402 Payment Required[/green]")
+                else:
+                    rprint(f"[yellow]⚠️  Bob's paywall returned {response.status_code}[/yellow]")
+            except Exception as e:
+                rprint(f"[yellow]⚠️  Could not test Bob's paywall: {e}[/yellow]")
+            
+        except Exception as e:
+            rprint(f"[red]❌ Failed to setup paywall servers: {e}[/red]")
+            import traceback
+            traceback.print_exc()
+            self.alice_paywall = None
+            self.bob_paywall = None
     
     def _fund_agent_wallets(self):
-        """Fund all agent wallets from 0G Testnet faucet"""
+        """Fund all agent wallets - network-specific (Base Sepolia or 0G Testnet)"""
         
         agents = [("Alice", self.alice_sdk), ("Bob", self.bob_sdk), ("Charlie", self.charlie_sdk)]
         funded_agents = []
         
-        print("💰 Checking wallet balances...")
-        for agent_name, sdk in agents:
-            balance = sdk.wallet_manager.get_wallet_balance(agent_name)
-            address = sdk.wallet_manager.get_wallet_address(agent_name)
-            print(f"   {agent_name}: {balance:.4f} A0GI ({address})")
-            
-            if balance > 0.001:  # Has some A0GI for gas
-                funded_agents.append(agent_name)
-            else:
-                print(f"   ⚠️  {agent_name} needs funding. Please send A0GI to {address}")
+        network = os.getenv("NETWORK", "base-sepolia")
         
-        if len(funded_agents) == 0:
-            print("🔗 Fund your wallets at: https://faucet.0g.ai/")
-            print("   Each wallet needs ~0.1 A0GI for gas fees")
+        print("💰 Checking wallet balances...")
+        
+        if network == "base-sepolia":
+            # For Base Sepolia: Check ETH (for gas) and USDC (for payments)
+            for agent_name, sdk in agents:
+                address = sdk.wallet_manager.get_wallet_address(agent_name)
+                
+                # Check ETH balance (for gas)
+                try:
+                    eth_balance = sdk.wallet_manager.get_wallet_balance(agent_name)
+                    print(f"   {agent_name}: {eth_balance:.6f} ETH ({address})")
+                    
+                    if eth_balance > 0.0001:  # Has some ETH for gas
+                        funded_agents.append(agent_name)
+                    else:
+                        print(f"   ⚠️  {agent_name} needs ETH for gas. Please fund at:")
+                        print(f"      https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet")
+                except Exception as e:
+                    print(f"   ⚠️  Could not check {agent_name} balance: {e}")
+            
+            if len(funded_agents) == 0:
+                print("🔗 Fund your wallets with Base Sepolia ETH:")
+                print("   https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet")
+                print("   Each wallet needs ~0.001 ETH for gas fees")
+                print()
+                print("💰 For USDC (payment token), use:")
+                print("   https://faucet.circle.com/ (Circle USDC Faucet)")
+        else:
+            # For 0G Testnet: Check A0GI
+            for agent_name, sdk in agents:
+                balance = sdk.wallet_manager.get_wallet_balance(agent_name)
+                address = sdk.wallet_manager.get_wallet_address(agent_name)
+                print(f"   {agent_name}: {balance:.4f} A0GI ({address})")
+                
+                if balance > 0.001:  # Has some A0GI for gas
+                    funded_agents.append(agent_name)
+                else:
+                    print(f"   ⚠️  {agent_name} needs funding. Please send A0GI to {address}")
+            
+            if len(funded_agents) == 0:
+                print("🔗 Fund your wallets at: https://faucet.0g.ai/")
+                print("   Each wallet needs ~0.1 A0GI for gas fees")
         
         self.results["funding"] = {
             "success": len(funded_agents) > 0,
-            "funded_agents": funded_agents
+            "funded_agents": funded_agents,
+            "network": network
         }
     
     def _register_agents_onchain(self):
@@ -596,11 +799,14 @@ class GenesisStudioX402Orchestrator:
         )
         
         # Create cart mandate
+        network = os.getenv("NETWORK", "base-sepolia")
+        currency = "USDC" if network == "base-sepolia" else "A0GI"
+        
         cart_mandate = self.alice_sdk.create_cart_mandate(
             cart_id="cart_loan_request_001",
             items=[{"service": "loan_evaluation_agent", "description": "Autonomous micro-loan creditworthiness evaluation with TEE verification", "price": 0.001}],
             total_amount=0.001,
-            currency="A0GI",
+            currency=currency,
             merchant_name="Alice Loan Officer Agent",
             expiry_minutes=15
         )
@@ -614,16 +820,16 @@ class GenesisStudioX402Orchestrator:
         # Display created mandates
         rprint(f"[cyan]📝 Created Google AP2 IntentMandate[/cyan]")
         if hasattr(intent_mandate, 'user_description'):
-            rprint(f"   Description: {intent_mandate.user_description[:100]}...")
+            rprint(f"   Description: {intent_mandate.user_description[:150]}...")
         if hasattr(intent_mandate, 'intent_id'):
             rprint(f"   Intent ID: {intent_mandate.intent_id}")
             rprint(f"   Expires: {intent_mandate.expiry_time}")
         rprint(f"[cyan]🛒 Created Google AP2 CartMandate with JWT[/cyan]")
-        rprint(f"   Cart ID: cart_winter_jacket_001")
-        rprint(f"   Items: {len(cart_mandate.items) if hasattr(cart_mandate, 'items') else 1} items, Total: 2.0 USDC")
+        rprint(f"   Cart ID: cart_loan_request_001")
+        rprint(f"   Items: {len(cart_mandate.items) if hasattr(cart_mandate, 'items') else 1} items, Total: 0.001 {currency}")
         if hasattr(cart_mandate, 'merchant_authorization'):
             # ✅ (D) Redact JWT for security (show only first 20 chars)
-            jwt_redacted = cart_mandate.merchant_authorization[:20] + "...[REDACTED]" if len(cart_mandate.merchant_authorization) > 20 else "[REDACTED]"
+            jwt_redacted = cart_mandate.merchant_authorization[:20] + "..." if len(cart_mandate.merchant_authorization) > 20 else "[REDACTED]"
             rprint(f"   JWT: {jwt_redacted}")
         
         self.results["ap2_intent"] = {
@@ -892,38 +1098,75 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
         rprint(f"   Authorization Method: Google AP2")
         rprint()
         
-        # x402 Crypto Settlement with A0GI (Layer 3 of Triple-Verified Stack)
-        rprint(f"[cyan]💰 x402 Crypto Settlement (A0GI tokens):[/cyan]")
-        print(f"💰 Creating x402 payment request: Charlie → Alice ({final_amount:.4f} A0GI)")
+        # x402 Crypto Settlement (Layer 3 of Triple-Verified Stack)
+        network = os.getenv("NETWORK", "base-sepolia")
         
-        # Execute direct A0GI payment on 0G network
-        rprint(f"[yellow]📤 Executing direct A0GI transfer...[/yellow]")
-        
-        x402_payment_result = self.charlie_sdk.execute_payment(
-            to_agent="Alice",
-            amount=final_amount,
-            service_type="smart_shopping"
-        )
-        
-        # Display payment results
-        rprint(f"[green]💳 Payment Successful (Direct A0GI Transfer)[/green]")
-        rprint(f"   From: Charlie")
-        rprint(f"   To: Alice")
-        if isinstance(x402_payment_result, dict):
-            amount = x402_payment_result.get("amount", 0)
-            tx_hash = x402_payment_result.get("transaction_hash", x402_payment_result.get("tx_hash", "N/A"))
+        if network == "base-sepolia":
+            # Use USDC on Base Sepolia via x402
+            rprint(f"[cyan]💰 x402 Crypto Settlement (USDC on Base Sepolia):[/cyan]")
+            print(f"💰 Creating x402 payment request: Charlie → Alice ({final_amount:.4f} USDC)")
+            
+            # Execute x402 USDC payment on Base Sepolia
+            rprint(f"[yellow]📤 Executing x402 USDC payment via facilitator...[/yellow]")
+            
+            x402_payment_result = self.charlie_sdk.execute_payment(
+                to_agent="Alice",
+                amount=final_amount,
+                service_type="loan_evaluation"
+            )
+            
+            # Display payment results
+            rprint(f"[green]💳 Payment Successful (x402 USDC)[/green]")
+            rprint(f"   From: Charlie")
+            rprint(f"   To: Alice")
+            if isinstance(x402_payment_result, dict):
+                amount = x402_payment_result.get("amount", 0)
+                tx_hash = x402_payment_result.get("transaction_hash", x402_payment_result.get("tx_hash", "N/A"))
+            else:
+                amount = getattr(x402_payment_result, "amount", 0)
+                tx_hash = getattr(x402_payment_result, "transaction_hash", "N/A")
+            
+            rprint(f"   Amount: {amount:.4f} USDC" if isinstance(amount, (int, float)) else f"   Amount: {amount}")
+            rprint(f"   Transaction: {tx_hash}")
+            if tx_hash and tx_hash != "N/A":
+                if not tx_hash.startswith('0x'):
+                    tx_hash = f"0x{tx_hash}"
+                rprint(f"   Explorer: https://sepolia.basescan.org/tx/{tx_hash}")
+            rprint(f"   Service: Loan Evaluation Service")
+            rprint(f"   Network: Base Sepolia")
         else:
-            amount = getattr(x402_payment_result, "amount", 0)
-            tx_hash = getattr(x402_payment_result, "transaction_hash", "N/A")
-        
-        rprint(f"   Amount: {amount:.4f} A0GI" if isinstance(amount, (int, float)) else f"   Amount: {amount}")
-        rprint(f"   Transaction: {tx_hash}")
-        if tx_hash and tx_hash != "N/A":
-            if not tx_hash.startswith('0x'):
-                tx_hash = f"0x{tx_hash}"
-        rprint(f"   Explorer: https://chainscan-galileo.0g.ai/tx/{tx_hash}")
-        rprint(f"   Service: Smart Shopping Service")
-        rprint(f"   Network: 0G Galileo Testnet")
+            # Use A0GI on 0G Testnet (direct transfer)
+            rprint(f"[cyan]💰 x402 Crypto Settlement (A0GI tokens):[/cyan]")
+            print(f"💰 Creating x402 payment request: Charlie → Alice ({final_amount:.4f} A0GI)")
+            
+            # Execute direct A0GI payment on 0G network
+            rprint(f"[yellow]📤 Executing direct A0GI transfer...[/yellow]")
+            
+            x402_payment_result = self.charlie_sdk.execute_payment(
+                to_agent="Alice",
+                amount=final_amount,
+                service_type="smart_shopping"
+            )
+            
+            # Display payment results
+            rprint(f"[green]💳 Payment Successful (Direct A0GI Transfer)[/green]")
+            rprint(f"   From: Charlie")
+            rprint(f"   To: Alice")
+            if isinstance(x402_payment_result, dict):
+                amount = x402_payment_result.get("amount", 0)
+                tx_hash = x402_payment_result.get("transaction_hash", x402_payment_result.get("tx_hash", "N/A"))
+            else:
+                amount = getattr(x402_payment_result, "amount", 0)
+                tx_hash = getattr(x402_payment_result, "transaction_hash", "N/A")
+            
+            rprint(f"   Amount: {amount:.4f} A0GI" if isinstance(amount, (int, float)) else f"   Amount: {amount}")
+            rprint(f"   Transaction: {tx_hash}")
+            if tx_hash and tx_hash != "N/A":
+                if not tx_hash.startswith('0x'):
+                    tx_hash = f"0x{tx_hash}"
+                rprint(f"   Explorer: https://chainscan-galileo.0g.ai/tx/{tx_hash}")
+            rprint(f"   Service: Smart Shopping Service")
+            rprint(f"   Network: 0G Galileo Testnet")
         
         # ✅ (C) Display proof CID linking - accountability layer
         if proof_cid:
@@ -938,19 +1181,27 @@ Respond in JSON format with fields: product_name, price, color, quality_score, v
         rprint()
         rprint(f"[bold green]🔗 Triple-Verified Stack Complete:[/bold green]")
         rprint(f"   ✅ Layer 1: AP2 Intent Verification (Google)")
-        rprint(f"   ✅ Layer 2: ChaosChain Process Integrity (ChaosChain + 0G Compute)")
+        rprint(f"   ✅ Layer 2: ChaosChain Process Integrity (ChaosChain + EigenCompute)")
         rprint(f"   ✅ Layer 3: Adjudication/Accountability (ChaosChain)")
+        
+        # Extract amount safely (handle both dict and object)
+        if isinstance(x402_payment_result, dict):
+            payment_amount = x402_payment_result.get("amount", final_amount)
+            payment_tx_hash = x402_payment_result.get("transaction_hash", x402_payment_result.get("tx_hash", "N/A"))
+        else:
+            payment_amount = getattr(x402_payment_result, "amount", final_amount)
+            payment_tx_hash = getattr(x402_payment_result, "transaction_hash", "N/A")
         
         payment_results = {
             "x402_payment_result": x402_payment_result,
-            "amount": x402_payment_result.amount,
+            "amount": payment_amount,
             "ap2_authorized": True,
-            "currency": "A0GI",
+            "currency": "USDC" if network == "base-sepolia" else "A0GI",
             "from": "Charlie",
             "to": "Alice",
-            "service": "smart_shopping",
-            "x402_success": bool(x402_payment_result.transaction_hash),
-            "network": "0G Testnet",
+            "service": "loan_evaluation" if network == "base-sepolia" else "smart_shopping",
+            "x402_success": bool(payment_tx_hash and payment_tx_hash != "N/A"),
+            "network": "Base Sepolia" if network == "base-sepolia" else "0G Testnet",
             "triple_verified": True,
             "proof_cid": proof_cid,  # ✅ ProcessProof CID for accountability
             "exec_hash": exec_hash,  # ✅ Deterministic execution hash
@@ -1872,16 +2123,21 @@ The complete lifecycle of trustless agentic commerce with Triple-Verified Stack:
 
 
 def main():
-    """Main entry point for 0G-integrated Genesis Studio"""
+    """Main entry point for Genesis Studio with x402 Facilitator Support"""
     
-    # Check if we're on the correct network
-    network = os.getenv("NETWORK", "local")
-    if network != "0g-testnet":
-        print("⚠️  Warning: This demo is designed for 0G Testnet.")
-        print("   Please set NETWORK=0g-testnet in your .env file.")
-        print()
+    # Check network configuration
+    network = os.getenv("NETWORK", "base-sepolia")
     
-    # Initialize and run the 0G-integrated orchestrator
+    if network == "base-sepolia":
+        rprint("[cyan]ℹ️  Running on Base Sepolia (x402 facilitator supported)[/cyan]")
+        rprint("[cyan]   For facilitator integration: export X402_USE_FACILITATOR=true[/cyan]")
+    elif network in ["0g-testnet", "zerog-testnet"]:
+        rprint("[cyan]ℹ️  Running on 0G Testnet[/cyan]")
+    else:
+        rprint(f"[yellow]⚠️  Unknown network: {network}[/yellow]")
+        rprint(f"[yellow]   Supported: base-sepolia, 0g-testnet[/yellow]")
+    
+    # Initialize and run the orchestrator
     orchestrator = GenesisStudioX402Orchestrator()
     orchestrator.run_complete_demo()
 

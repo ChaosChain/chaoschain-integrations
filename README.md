@@ -1,6 +1,8 @@
 # ChaosChain Integrations
 
-Partner adapters for [ChaosChain SDK](https://github.com/ChaosChain/chaoschain) - enabling decentralized storage, compute, and attestation services.
+**The Accountability Layer for Autonomous AI Agents**
+
+Partner adapters for [ChaosChain SDK](https://github.com/ChaosChain/chaoschain) - enabling decentralized storage, compute, and TEE services with on-chain accountability (ERC-8004).
 
 [![CI](https://github.com/ChaosChain/chaoschain-integrations/actions/workflows/ci.yml/badge.svg)](https://github.com/ChaosChain/chaoschain-integrations/actions)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
@@ -8,17 +10,33 @@ Partner adapters for [ChaosChain SDK](https://github.com/ChaosChain/chaoschain) 
 
 ## Overview
 
-This repository contains **adapters** (plugins) that integrate partner services with the ChaosChain SDK. Each adapter implements a standard protocol (`StorageBackend`, `ComputeBackend`, `AttestationBackend`) allowing seamless swapping of providers.
+This repository contains **provider integrations** for the ChaosChain SDK, enabling AI agents to use decentralized infrastructure with full accountability and verifiability.
 
-### Supported Integrations
+### **Extensible Provider System**
 
-| Category | Provider | Status | Install |
-|----------|----------|--------|---------|
-| **Storage** | ZeroG (0G) | Alpha | `[zerog]` |
-| **Storage** | IPFS (Pinata) | Alpha | `[pinata]` |
-| **Compute** | ZeroG (0G) | Alpha | `[zerog]` |
-| **Compute** | Eigen | Alpha | `[eigen]` |
-| **Attestation** | Chainlink CRE | Stub | `[cre]` |
+ChaosChain uses a **Protocol-based provider system** that makes it easy for any team to integrate their infrastructure:
+
+- **ComputeBackend** - LLM inference, ML training, verifiable compute
+- **StorageBackend** - Decentralized data storage, agent memory, audit logs
+- **TEEBackend** - Hardware-verified identity, secure key management
+
+**Want to add your provider?** See: [PROVIDER_INTEGRATION_GUIDE.md](./PROVIDER_INTEGRATION_GUIDE.md)
+
+### **Supported Providers**
+
+| Category | Provider | Status | Verification | Install |
+|----------|----------|--------|--------------|---------|
+| **Compute** | EigenCompute | ✅ Active | TEE-ML (Intel SGX) | `[eigen]` |
+| **Compute** | 0G Compute | ✅ Active | TEE-ML | `[zerog]` |
+| **Storage** | 0G Storage | ✅ Active | KECCAK-256 | `[zerog]` |
+| **Storage** | IPFS Local | ✅ Active | CID | Built-in |
+| **Storage** | IPFS Pinata | ✅ Active | CID | `[pinata]` |
+| **Storage** | Irys | ✅ Active | CID | Built-in |
+| **TEE** | EigenCompute | ✅ Active | Remote Attestation | `[eigen]` |
+
+**See all providers**: [SUPPORTED_PROVIDERS.md](./SUPPORTED_PROVIDERS.md)
+
+**Add your provider**: [PROVIDER_INTEGRATION_GUIDE.md](./PROVIDER_INTEGRATION_GUIDE.md)
 
 ## Installation
 
